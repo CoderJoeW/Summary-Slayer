@@ -65,7 +65,7 @@ This field is foundational to Summary Slayer’s correctness and locking strateg
 ## 🧠 How Summary Slayer Works Internally
 
 Creating a summary table while live traffic is ongoing is the hard problem.  
-Summary Slayer solves this with **minimal locking** and **transactional correctness**.
+Summary Slayer solves this with **minimal locking**, **transactional correctness**, and **guaranteed backfill accuracy**.
 
 ---
 
@@ -76,7 +76,8 @@ When creating a new summary table, Summary Slayer briefly acquires a **small wri
 During this lock, it performs exactly two operations:
 
 1. **Capture the high-water mark**
-   - Records the last modified row using `updated_at`
+   - Records the current timestamp (`lock_timestamp`)
+   - This timestamp guarantees **backfill accuracy**
 2. **Generate and apply trigger code**
    - INSERT / UPDATE / DELETE triggers are created and activated
 
@@ -98,13 +99,14 @@ From this point forward, the summary table is **live and correct**.
 
 ### 🔄 Step 3: Backfill Historical Data (Safely)
 
-With triggers handling new writes, Summary Slayer begins backfilling older data:
+With triggers handling new writes, Summary Slayer begins backfilling older data **based on the captured timestamp**:
 
+- Only rows where `updated_at <= lock_timestamp` are included in the backfill
 - Data is processed **in batches**
 - Each batch updates the summary table incrementally
 - No race conditions are possible
 
-Because the trigger system is already active, **no data can be missed**.
+Because the trigger system is already active, **all new writes after the lock are automatically applied**, guaranteeing **100% accuracy**.
 
 ---
 
@@ -130,7 +132,7 @@ When backfill completes, the summary table is:
 
     [ Acquire Write Lock ]
             |
-            |-- Capture last updated_at record
+            |-- Capture current timestamp (lock_timestamp)
             |-- Create & enable triggers
             |
     [ Release Lock ]
@@ -143,7 +145,7 @@ When backfill completes, the summary table is:
                                     │
                     ┌────────────────────────────────────┐
                     │ Backfill historical data in batches │
-                    │ Safe, incremental, no missed rows  │
+                    │ Only rows where updated_at <= timestamp │
                     └────────────────────────────────────┘
 
     Result:
