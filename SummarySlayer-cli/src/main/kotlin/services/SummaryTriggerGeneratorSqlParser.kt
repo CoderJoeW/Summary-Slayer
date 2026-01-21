@@ -53,9 +53,10 @@ class SummaryTriggerGeneratorSqlParser {
         val plainSelect = parseAndValidateQuery(normalizedQuery)
         val parsedQuery = extractQueryComponents(plainSelect, normalizedQuery)
 
-        val columnDefinitions = loadColumnDefinitionsIfNeeded(parsedQuery.baseTableName, parsedQuery.groupByColumns)
+        val columnDefinitions = loadColumnDefinitionsIfNeeded(parsedQuery.baseTableName, parsedQuery.groupByColumns, parsedQuery.aggregates)
+        val aggregateColumnTypes = loadAggregateColumnTypes(parsedQuery.baseTableName, parsedQuery.aggregates)
         val summaryTableName = summaryTable ?: generateSummaryTableName(parsedQuery.baseTableName, parsedQuery.groupByColumns)
-        val tableDdl = buildSummaryTableDDL(summaryTableName, columnDefinitions, parsedQuery.aggregates)
+        val tableDdl = buildSummaryTableDDL(summaryTableName, columnDefinitions, parsedQuery.aggregates, aggregateColumnTypes)
 
         val wherePredicates = buildWherePredicates(parsedQuery.whereClause)
         val upsertComponents = buildUpsertComponents(columnDefinitions, parsedQuery.aggregates)
@@ -234,7 +235,7 @@ class SummaryTriggerGeneratorSqlParser {
         }
     }
 
-    private fun loadColumnDefinitionsIfNeeded(baseTableName: String, groupByColumns: List<String>): Map<String, String> {
+    private fun loadColumnDefinitionsIfNeeded(baseTableName: String, groupByColumns: List<String>, aggregates: List<AggregateInfo>): Map<String, String> {
         if (groupByColumns.isEmpty()) {
             return emptyMap()
         }
@@ -243,6 +244,51 @@ class SummaryTriggerGeneratorSqlParser {
             ?: throw IllegalStateException("Database connection not initialized.")
 
         return loadColumnDefinitions(connection.catalog, baseTableName, groupByColumns)
+    }
+
+    private fun loadAggregateColumnTypes(baseTableName: String, aggregates: List<AggregateInfo>): Map<String, String> {
+        val connection = DatabaseConnection.getConnection()
+            ?: throw IllegalStateException("Database connection not initialized.")
+
+        val sumColumns = aggregates.filter { it.func == "SUM" && it.col != "*" }.map { it.col }
+        if (sumColumns.isEmpty()) {
+            return emptyMap()
+        }
+
+        return loadColumnTypes(connection.catalog, baseTableName, sumColumns)
+    }
+
+    private fun loadColumnTypes(databaseName: String, tableName: String, columnNames: List<String>): Map<String, String> {
+        val connection = DatabaseConnection.getConnection()
+            ?: throw IllegalStateException("Database connection not initialized.")
+
+        val placeholders = columnNames.joinToString(",") { "?" }
+        val sql = """
+            SELECT COLUMN_NAME, COLUMN_TYPE
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME IN ($placeholders)
+        """.trimIndent()
+
+        val statement = connection.prepareStatement(sql)
+        statement.setString(1, databaseName)
+        statement.setString(2, tableName)
+        columnNames.forEachIndexed { index, columnName ->
+            statement.setString(index + 3, columnName)
+        }
+
+        val types = mutableMapOf<String, String>()
+        val resultSet = statement.executeQuery()
+
+        while (resultSet.next()) {
+            val columnName = resultSet.getString("COLUMN_NAME")
+            val columnType = resultSet.getString("COLUMN_TYPE")
+            types[columnName] = columnType
+        }
+
+        resultSet.close()
+        statement.close()
+
+        return types
     }
 
     private fun loadColumnDefinitions(databaseName: String, tableName: String, columnNames: List<String>): Map<String, String> {
@@ -311,36 +357,39 @@ class SummaryTriggerGeneratorSqlParser {
     private fun buildSummaryTableDDL(
         summaryTableName: String,
         keyColumnDefinitions: Map<String, String>,
-        aggregates: List<AggregateInfo>
+        aggregates: List<AggregateInfo>,
+        aggregateColumnTypes: Map<String, String>
     ): String {
         val (allColumnDefinitions, primaryKeyColumns) = if (keyColumnDefinitions.isEmpty()) {
-            buildNonGroupedTableStructure(aggregates)
+            buildNonGroupedTableStructure(aggregates, aggregateColumnTypes)
         } else {
-            buildGroupedTableStructure(keyColumnDefinitions, aggregates)
+            buildGroupedTableStructure(keyColumnDefinitions, aggregates, aggregateColumnTypes)
         }
 
         return formatTableDdl(summaryTableName, allColumnDefinitions, primaryKeyColumns)
     }
 
-    private fun buildNonGroupedTableStructure(aggregates: List<AggregateInfo>): Pair<List<String>, String> {
+    private fun buildNonGroupedTableStructure(aggregates: List<AggregateInfo>, aggregateColumnTypes: Map<String, String>): Pair<List<String>, String> {
         val columnDefinitions = listOf("`summary_id` TINYINT UNSIGNED NOT NULL DEFAULT 1") +
-            aggregates.map { buildAggregateColumnDefinition(it) }
+            aggregates.map { buildAggregateColumnDefinition(it, aggregateColumnTypes) }
         return Pair(columnDefinitions, "`summary_id`")
     }
 
     private fun buildGroupedTableStructure(
         keyColumnDefinitions: Map<String, String>,
-        aggregates: List<AggregateInfo>
+        aggregates: List<AggregateInfo>,
+        aggregateColumnTypes: Map<String, String>
     ): Pair<List<String>, String> {
         val columnDefinitions = keyColumnDefinitions.values.toList() +
-            aggregates.map { buildAggregateColumnDefinition(it) }
+            aggregates.map { buildAggregateColumnDefinition(it, aggregateColumnTypes) }
         val primaryKeyColumns = keyColumnDefinitions.keys.joinToString(",") { "`$it`" }
         return Pair(columnDefinitions, primaryKeyColumns)
     }
 
-    private fun buildAggregateColumnDefinition(aggregate: AggregateInfo): String {
+    private fun buildAggregateColumnDefinition(aggregate: AggregateInfo, aggregateColumnTypes: Map<String, String>): String {
         return if (aggregate.func == "SUM") {
-            "`${aggregate.alias}` DECIMAL(38,6) NOT NULL DEFAULT 0"
+            val columnType = aggregateColumnTypes[aggregate.col] ?: "DECIMAL(38,6)"
+            "`${aggregate.alias}` $columnType NOT NULL DEFAULT 0"
         } else {
             "`${aggregate.alias}` BIGINT UNSIGNED NOT NULL DEFAULT 0"
         }
