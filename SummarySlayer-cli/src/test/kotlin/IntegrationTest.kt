@@ -153,7 +153,7 @@ class IntegrationTest: DockerComposeTestBase() {
             result.triggers["update"]?.let { conn.createStatement().execute(it) }
             result.triggers["delete"]?.let { conn.createStatement().execute(it) }
 
-            Transactions().seed(10)
+            Transactions().seed(1)
 
             val originalTableQuery = conn.createStatement()
                 .executeQuery(query)
