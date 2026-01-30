@@ -574,4 +574,183 @@ class SumCostByUserQueryTest : DockerComposeTestBase() {
         }
         assertTablesMatch("after no-op update (same value)")
     }
+
+    // --- Update both cost and user_id simultaneously ---
+
+    @Test
+    fun `tables match after updating both cost and user_id in one statement`() {
+        setupTriggersAndSummaryTable()
+        insertTransaction(1, 10.00)
+        insertTransaction(2, 20.00)
+
+        connect().use { conn ->
+            conn.createStatement().executeUpdate(
+                "UPDATE transactions SET user_id = 2, cost = 50.00 WHERE user_id = 1 LIMIT 1",
+            )
+        }
+        assertTablesMatch("after updating both cost and user_id simultaneously")
+    }
+
+    @Test
+    fun `tables match after updating both cost and user_id leaving source user empty`() {
+        setupTriggersAndSummaryTable()
+        insertTransaction(1, 10.00)
+        insertTransaction(2, 20.00)
+
+        connect().use { conn ->
+            conn.createStatement().executeUpdate(
+                "UPDATE transactions SET user_id = 2, cost = 99.00 WHERE user_id = 1",
+            )
+        }
+        assertTablesMatch("after moving all of user 1 to user 2 with new cost")
+    }
+
+    // --- Multi-user delete without LIMIT ---
+
+    @Test
+    fun `tables match after deleting rows spanning multiple users by cost filter`() {
+        setupTriggersAndSummaryTable()
+        insertTransaction(1, 1.00)
+        insertTransaction(1, 50.00)
+        insertTransaction(2, 2.00)
+        insertTransaction(2, 60.00)
+        insertTransaction(3, 3.00)
+        insertTransaction(3, 70.00)
+
+        // Delete all cheap transactions across all users
+        connect().use { conn ->
+            conn.createStatement().executeUpdate(
+                "DELETE FROM transactions WHERE cost < 5.00",
+            )
+        }
+        assertTablesMatch("after deleting low-cost rows across multiple users")
+    }
+
+    @Test
+    fun `tables match after deleting rows that removes some users entirely`() {
+        setupTriggersAndSummaryTable()
+        insertTransaction(1, 1.00)
+        insertTransaction(2, 2.00)
+        insertTransaction(3, 100.00)
+
+        // Delete all rows with cost < 10, wiping out users 1 and 2
+        connect().use { conn ->
+            conn.createStatement().executeUpdate(
+                "DELETE FROM transactions WHERE cost < 10.00",
+            )
+        }
+        assertTablesMatch("after deleting rows that removes users 1 and 2 entirely")
+    }
+
+    // --- Update user_id to a brand-new group key ---
+
+    @Test
+    fun `tables match after moving transaction to a user with no prior summary entry`() {
+        setupTriggersAndSummaryTable()
+        insertTransaction(1, 10.00)
+        insertTransaction(1, 20.00)
+
+        // Move one row to user 2 who has never appeared in the summary table
+        connect().use { conn ->
+            conn.createStatement().executeUpdate(
+                "UPDATE transactions SET user_id = 2 WHERE user_id = 1 LIMIT 1",
+            )
+        }
+        assertTablesMatch("after moving transaction to user with no prior summary row")
+    }
+
+    @Test
+    fun `tables match after moving all transactions to a user with no prior summary entry`() {
+        setupTriggersAndSummaryTable()
+        insertTransaction(1, 10.00)
+        insertTransaction(1, 20.00)
+
+        // Move everything to user 3 who has never appeared
+        connect().use { conn ->
+            conn.createStatement().executeUpdate(
+                "UPDATE transactions SET user_id = 3 WHERE user_id = 1",
+            )
+        }
+        assertTablesMatch("after moving all transactions to brand-new user (source vanishes)")
+    }
+
+    // --- Multi-row update changing user_id in one statement ---
+
+    @Test
+    fun `tables match after multi-row update changing user_id across groups`() {
+        setupTriggersAndSummaryTable()
+        insertTransaction(1, 10.00)
+        insertTransaction(1, 20.00)
+        insertTransaction(2, 30.00)
+
+        // Move all of user 1's rows to user 3 in one statement
+        connect().use { conn ->
+            conn.createStatement().executeUpdate(
+                "UPDATE transactions SET user_id = 3 WHERE user_id = 1",
+            )
+        }
+        assertTablesMatch("after multi-row user_id change in one statement")
+    }
+
+    @Test
+    fun `tables match after multi-row update consolidating all users into one`() {
+        setupTriggersAndSummaryTable()
+        insertTransaction(1, 10.00)
+        insertTransaction(2, 20.00)
+        insertTransaction(3, 30.00)
+
+        // Move everyone to user 1
+        connect().use { conn ->
+            conn.createStatement().executeUpdate(
+                "UPDATE transactions SET user_id = 1 WHERE user_id != 1",
+            )
+        }
+        assertTablesMatch("after consolidating all transactions to user 1")
+    }
+
+    // --- Delete zero-cost transactions ---
+
+    @Test
+    fun `tables match after deleting a zero-cost transaction`() {
+        setupTriggersAndSummaryTable()
+        insertTransaction(1, 0.00)
+        insertTransaction(1, 25.00)
+
+        connect().use { conn ->
+            conn.createStatement().executeUpdate(
+                "DELETE FROM transactions WHERE user_id = 1 AND cost = 0.00 LIMIT 1",
+            )
+        }
+        assertTablesMatch("after deleting a zero-cost row")
+    }
+
+    @Test
+    fun `tables match after deleting only zero-cost transaction for a user`() {
+        setupTriggersAndSummaryTable()
+        insertTransaction(1, 0.00)
+
+        connect().use { conn ->
+            conn.createStatement().executeUpdate(
+                "DELETE FROM transactions WHERE user_id = 1 AND cost = 0.00",
+            )
+        }
+        assertTablesMatch("after deleting the only transaction which was zero-cost (user should vanish)")
+    }
+
+    @Test
+    fun `tables match after deleting all zero-cost transactions across users`() {
+        setupTriggersAndSummaryTable()
+        insertTransaction(1, 0.00)
+        insertTransaction(1, 10.00)
+        insertTransaction(2, 0.00)
+        insertTransaction(3, 0.00)
+        insertTransaction(3, 5.00)
+
+        connect().use { conn ->
+            conn.createStatement().executeUpdate(
+                "DELETE FROM transactions WHERE cost = 0.00",
+            )
+        }
+        assertTablesMatch("after deleting all zero-cost rows (user 2 should vanish)")
+    }
 }
