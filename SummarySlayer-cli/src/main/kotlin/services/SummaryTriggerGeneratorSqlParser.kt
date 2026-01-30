@@ -1,6 +1,6 @@
 package com.coderjoe.services
 
-import com.coderjoe.database.DatabaseConnection
+import com.coderjoe.database.DatabaseConfig
 import net.sf.jsqlparser.parser.CCJSqlParserUtil
 import net.sf.jsqlparser.statement.select.PlainSelect
 import net.sf.jsqlparser.statement.select.Select
@@ -240,15 +240,13 @@ class SummaryTriggerGeneratorSqlParser {
             return emptyMap()
         }
 
-        val connection = DatabaseConnection.getConnection()
-            ?: throw IllegalStateException("Database connection not initialized.")
+        val connection = DatabaseConfig.getConnection()
 
         return loadColumnDefinitions(connection.catalog, baseTableName, groupByColumns)
     }
 
     private fun loadAggregateColumnTypes(baseTableName: String, aggregates: List<AggregateInfo>): Map<String, String> {
-        val connection = DatabaseConnection.getConnection()
-            ?: throw IllegalStateException("Database connection not initialized.")
+        val connection = DatabaseConfig.getConnection()
 
         val sumColumns = aggregates.filter { it.func == "SUM" && it.col != "*" }.map { it.col }
         if (sumColumns.isEmpty()) {
@@ -259,8 +257,7 @@ class SummaryTriggerGeneratorSqlParser {
     }
 
     private fun loadColumnTypes(databaseName: String, tableName: String, columnNames: List<String>): Map<String, String> {
-        val connection = DatabaseConnection.getConnection()
-            ?: throw IllegalStateException("Database connection not initialized.")
+        val connection = DatabaseConfig.getConnection()
 
         val placeholders = columnNames.joinToString(",") { "?" }
         val sql = """
@@ -292,8 +289,7 @@ class SummaryTriggerGeneratorSqlParser {
     }
 
     private fun loadColumnDefinitions(databaseName: String, tableName: String, columnNames: List<String>): Map<String, String> {
-        val connection = DatabaseConnection.getConnection()
-            ?: throw IllegalStateException("Database connection not initialized.")
+        val connection = DatabaseConfig.getConnection()
 
         val columnDefinitionsMap = queryColumnDefinitions(connection, databaseName, tableName, columnNames)
         validateAllColumnsFound(columnNames, columnDefinitionsMap, tableName)
