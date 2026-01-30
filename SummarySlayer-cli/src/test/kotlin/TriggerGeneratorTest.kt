@@ -204,17 +204,17 @@ class TriggerGeneratorTest {
             keyColumns = listOf("user_id"),
             keyExpressions = listOf("NEW.user_id"),
             insertColumns = listOf("status", "description"),
-            insertValues = listOf("'active'", "CONCAT('User ', NEW.name, ' registered')"),
+            insertValues = listOf("'active'", "CONCAT('database.entity.User ', NEW.name, ' registered')"),
             updateExpressions = listOf(
                 "status = 'updated'",
-                "description = CONCAT('User ', NEW.name, ' updated')"
+                "description = CONCAT('database.entity.User ', NEW.name, ' updated')"
             )
         )
 
         val expected = """
             INSERT INTO special_table (user_id, status, description)
-            VALUES (NEW.user_id, 'active', CONCAT('User ', NEW.name, ' registered'))
-            ON DUPLICATE KEY UPDATE status = 'updated', description = CONCAT('User ', NEW.name, ' updated');
+            VALUES (NEW.user_id, 'active', CONCAT('database.entity.User ', NEW.name, ' registered'))
+            ON DUPLICATE KEY UPDATE status = 'updated', description = CONCAT('database.entity.User ', NEW.name, ' updated');
         """.trimIndent()
 
         assertEquals(expected, result)
