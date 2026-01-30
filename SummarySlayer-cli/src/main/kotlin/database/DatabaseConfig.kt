@@ -16,6 +16,7 @@ object DatabaseConfig {
             this.username = username
             this.password = password
             maximumPoolSize = 10
+            addDataSourceProperty("rewriteBatchedStatements", "true")
         }
         Database.Companion.connect(HikariDataSource(config))
     }
