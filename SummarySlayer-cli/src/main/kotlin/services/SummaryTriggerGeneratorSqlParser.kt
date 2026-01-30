@@ -9,10 +9,20 @@ import net.sf.jsqlparser.schema.Column
 import net.sf.jsqlparser.schema.Table as SqlTable
 import net.sf.jsqlparser.expression.Function
 
+data class BackfillContext(
+    val baseTableName: String,
+    val summaryTableName: String,
+    val groupByColumns: List<String>,
+    val aggregates: List<AggregateInfo>,
+    val whereClause: String?
+)
+
 data class TriggerGeneratorResult(
+    val summaryTableName: String,
     val summaryTable: String,
     val triggers: Map<String, String>,
-    val preview: String
+    val preview: String,
+    val backfillContext: BackfillContext
 )
 
 data class AggregateInfo(
@@ -63,9 +73,17 @@ class SummaryTriggerGeneratorSqlParser {
         val triggers = buildTriggers(parsedQuery.baseTableName, summaryTableName, wherePredicates, upsertComponents)
 
         return TriggerGeneratorResult(
+            summaryTableName = summaryTableName,
             summaryTable = tableDdl,
             triggers = triggers,
-            preview = formatPreview(tableDdl, triggers)
+            preview = formatPreview(tableDdl, triggers),
+            backfillContext = BackfillContext(
+                baseTableName = parsedQuery.baseTableName,
+                summaryTableName = summaryTableName,
+                groupByColumns = parsedQuery.groupByColumns,
+                aggregates = parsedQuery.aggregates,
+                whereClause = parsedQuery.whereClause
+            )
         )
     }
 
