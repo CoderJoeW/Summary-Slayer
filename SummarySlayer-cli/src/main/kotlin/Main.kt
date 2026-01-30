@@ -43,7 +43,7 @@ fun main() {
     return
 
     println("Enter query: ")
-    val originalQuery = readln() ?: query
+    val originalQuery = readln().ifEmpty { query }
 
     val result = parser.generate(originalQuery)
 
