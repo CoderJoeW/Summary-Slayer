@@ -1,6 +1,6 @@
 package com.coderjoe
 
-import com.coderjoe.database.DatabaseConnection
+import com.coderjoe.database.DatabaseConfig
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.BeforeEach
@@ -11,7 +11,7 @@ data class ColumnSpec(
     val typeName: String,
     val size: Int,
     val decimalDigits: Int?,
-    val nullable: Boolean
+    val nullable: Boolean,
 )
 
 /**
@@ -23,7 +23,6 @@ data class ColumnSpec(
  * - Stops and removes the container after all tests complete
  */
 abstract class DockerComposeTestBase {
-
     companion object {
         private const val JDBC_URL = "jdbc:mariadb://localhost:3307/summaryslayer"
         private const val USERNAME = "testuser"
@@ -38,7 +37,7 @@ abstract class DockerComposeTestBase {
 
             startDockerCompose()
             waitForDatabase()
-            DatabaseConnection.initialize(JDBC_URL, USERNAME, PASSWORD)
+            DatabaseConfig.initialize(JDBC_URL, USERNAME, PASSWORD)
 
             println("Docker Compose test environment ready!")
         }
@@ -59,16 +58,18 @@ abstract class DockerComposeTestBase {
                 throw IllegalStateException("docker-compose.test.yml not found at: ${composeFile.absolutePath}")
             }
 
-            val process = ProcessBuilder(
-                "docker-compose",
-                "-f", DOCKER_COMPOSE_FILE,
-                "up",
-                "-d"
-            )
-                .directory(projectRoot)
-                .redirectOutput(ProcessBuilder.Redirect.INHERIT)
-                .redirectError(ProcessBuilder.Redirect.INHERIT)
-                .start()
+            val process =
+                ProcessBuilder(
+                    "docker-compose",
+                    "-f",
+                    DOCKER_COMPOSE_FILE,
+                    "up",
+                    "-d",
+                )
+                    .directory(projectRoot)
+                    .redirectOutput(ProcessBuilder.Redirect.INHERIT)
+                    .redirectError(ProcessBuilder.Redirect.INHERIT)
+                    .start()
 
             val exitCode = process.waitFor()
             if (exitCode != 0) {
@@ -79,16 +80,19 @@ abstract class DockerComposeTestBase {
         private fun stopDockerCompose() {
             val projectRoot = File(System.getProperty("user.dir"))
 
-            val process = ProcessBuilder(
-                "docker-compose",
-                "-f", DOCKER_COMPOSE_FILE,
-                "down",
-                "-v"  // Remove volumes to ensure clean state
-            )
-                .directory(projectRoot)
-                .redirectOutput(ProcessBuilder.Redirect.INHERIT)
-                .redirectError(ProcessBuilder.Redirect.INHERIT)
-                .start()
+            val process =
+                ProcessBuilder(
+                    "docker-compose",
+                    "-f",
+                    DOCKER_COMPOSE_FILE,
+                    "down",
+                    // Remove volumes to ensure clean state
+                    "-v",
+                )
+                    .directory(projectRoot)
+                    .redirectOutput(ProcessBuilder.Redirect.INHERIT)
+                    .redirectError(ProcessBuilder.Redirect.INHERIT)
+                    .start()
 
             process.waitFor()
         }
@@ -115,12 +119,11 @@ abstract class DockerComposeTestBase {
 
             throw RuntimeException(
                 "Database did not become ready within $MAX_WAIT_SECONDS seconds",
-                lastException
+                lastException,
             )
         }
 
-        fun connect(): java.sql.Connection =
-            DriverManager.getConnection(JDBC_URL, USERNAME, PASSWORD)
+        fun connect(): java.sql.Connection = DriverManager.getConnection(JDBC_URL, USERNAME, PASSWORD)
 
         fun executeSQL(sql: String) {
             connect().use { connection ->
@@ -188,11 +191,10 @@ abstract class DockerComposeTestBase {
                         typeName = columns.getString("TYPE_NAME"),
                         size = columns.getInt("COLUMN_SIZE"),
                         decimalDigits = columns.getInt("DECIMAL_DIGITS").takeIf { !columns.wasNull() },
-                        nullable = columns.getInt("NULLABLE") == java.sql.DatabaseMetaData.columnNullable
-                    )
+                        nullable = columns.getInt("NULLABLE") == java.sql.DatabaseMetaData.columnNullable,
+                    ),
                 )
             }
         }
     }
 }
-
