@@ -1,6 +1,6 @@
 package com.coderjoe.services
 
-import com.coderjoe.database.DatabaseConfig
+import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import net.sf.jsqlparser.parser.CCJSqlParserUtil
 import net.sf.jsqlparser.statement.select.PlainSelect
 import net.sf.jsqlparser.statement.select.Select
@@ -53,7 +53,7 @@ class SummaryTriggerGeneratorSqlParser {
         val plainSelect = parseAndValidateQuery(normalizedQuery)
         val parsedQuery = extractQueryComponents(plainSelect, normalizedQuery)
 
-        val columnDefinitions = loadColumnDefinitionsIfNeeded(parsedQuery.baseTableName, parsedQuery.groupByColumns, parsedQuery.aggregates)
+        val columnDefinitions = loadColumnDefinitionsIfNeeded(parsedQuery.baseTableName, parsedQuery.groupByColumns)
         val aggregateColumnTypes = loadAggregateColumnTypes(parsedQuery.baseTableName, parsedQuery.aggregates)
         val summaryTableName = summaryTable ?: generateSummaryTableName(parsedQuery.baseTableName, parsedQuery.groupByColumns)
         val tableDdl = buildSummaryTableDDL(summaryTableName, columnDefinitions, parsedQuery.aggregates, aggregateColumnTypes)
@@ -235,109 +235,69 @@ class SummaryTriggerGeneratorSqlParser {
         }
     }
 
-    private fun loadColumnDefinitionsIfNeeded(baseTableName: String, groupByColumns: List<String>, aggregates: List<AggregateInfo>): Map<String, String> {
+    private data class ColumnMetadata(
+        val columnType: String,
+        val isNullable: Boolean
+    )
+
+    private fun loadColumnDefinitionsIfNeeded(baseTableName: String, groupByColumns: List<String>): Map<String, String> {
         if (groupByColumns.isEmpty()) {
             return emptyMap()
         }
 
-        val connection = DatabaseConfig.getConnection()
+        val metadata = queryColumnMetadata(baseTableName, groupByColumns)
+        groupByColumns.forEach { columnName ->
+            if (!metadata.containsKey(columnName)) {
+                throw IllegalArgumentException("Group-by column `$columnName` not found on `$baseTableName`.")
+            }
+        }
 
-        return loadColumnDefinitions(connection.catalog, baseTableName, groupByColumns)
+        return groupByColumns.associateWith { col ->
+            val meta = metadata[col]!!
+            "`$col` ${meta.columnType} ${if (meta.isNullable) "NULL" else "NOT NULL"}"
+        }
     }
 
     private fun loadAggregateColumnTypes(baseTableName: String, aggregates: List<AggregateInfo>): Map<String, String> {
-        val connection = DatabaseConfig.getConnection()
-
         val sumColumns = aggregates.filter { it.func == "SUM" && it.col != "*" }.map { it.col }
         if (sumColumns.isEmpty()) {
             return emptyMap()
         }
 
-        return loadColumnTypes(connection.catalog, baseTableName, sumColumns)
+        val metadata = queryColumnMetadata(baseTableName, sumColumns)
+        return metadata.mapValues { it.value.columnType }
     }
 
-    private fun loadColumnTypes(databaseName: String, tableName: String, columnNames: List<String>): Map<String, String> {
-        val connection = DatabaseConfig.getConnection()
+    private fun queryColumnMetadata(tableName: String, columnNames: List<String>): Map<String, ColumnMetadata> {
+        return transaction {
+            val conn = this.connection.connection as java.sql.Connection
+            val databaseName = conn.catalog
 
-        val placeholders = columnNames.joinToString(",") { "?" }
-        val sql = """
-            SELECT COLUMN_NAME, COLUMN_TYPE
-            FROM INFORMATION_SCHEMA.COLUMNS
-            WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME IN ($placeholders)
-        """.trimIndent()
+            val placeholders = columnNames.joinToString(",") { "?" }
+            val sql = """
+                SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE
+                FROM INFORMATION_SCHEMA.COLUMNS
+                WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME IN ($placeholders)
+            """.trimIndent()
 
-        val statement = connection.prepareStatement(sql)
-        statement.setString(1, databaseName)
-        statement.setString(2, tableName)
-        columnNames.forEachIndexed { index, columnName ->
-            statement.setString(index + 3, columnName)
-        }
+            val statement = conn.prepareStatement(sql)
+            statement.use { stmt ->
+                stmt.setString(1, databaseName)
+                stmt.setString(2, tableName)
+                columnNames.forEachIndexed { index, columnName ->
+                    stmt.setString(index + 3, columnName)
+                }
 
-        val types = mutableMapOf<String, String>()
-        val resultSet = statement.executeQuery()
-
-        while (resultSet.next()) {
-            val columnName = resultSet.getString("COLUMN_NAME")
-            val columnType = resultSet.getString("COLUMN_TYPE")
-            types[columnName] = columnType
-        }
-
-        resultSet.close()
-        statement.close()
-
-        return types
-    }
-
-    private fun loadColumnDefinitions(databaseName: String, tableName: String, columnNames: List<String>): Map<String, String> {
-        val connection = DatabaseConfig.getConnection()
-
-        val columnDefinitionsMap = queryColumnDefinitions(connection, databaseName, tableName, columnNames)
-        validateAllColumnsFound(columnNames, columnDefinitionsMap, tableName)
-
-        return columnNames.associateWith { columnDefinitionsMap[it]!! }
-    }
-
-    private fun queryColumnDefinitions(
-        connection: java.sql.Connection,
-        databaseName: String,
-        tableName: String,
-        columnNames: List<String>
-    ): Map<String, String> {
-        val placeholders = columnNames.joinToString(",") { "?" }
-        val sql = """
-            SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE
-            FROM INFORMATION_SCHEMA.COLUMNS
-            WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME IN ($placeholders)
-        """.trimIndent()
-
-        val statement = connection.prepareStatement(sql)
-        statement.setString(1, databaseName)
-        statement.setString(2, tableName)
-        columnNames.forEachIndexed { index, columnName ->
-            statement.setString(index + 3, columnName)
-        }
-
-        val definitions = mutableMapOf<String, String>()
-        val resultSet = statement.executeQuery()
-
-        while (resultSet.next()) {
-            val columnName = resultSet.getString("COLUMN_NAME")
-            val columnType = resultSet.getString("COLUMN_TYPE")
-            val isNullable = resultSet.getString("IS_NULLABLE")
-
-            definitions[columnName] = "`$columnName` $columnType ${if (isNullable == "YES") "NULL" else "NOT NULL"}"
-        }
-
-        resultSet.close()
-        statement.close()
-
-        return definitions
-    }
-
-    private fun validateAllColumnsFound(columnNames: List<String>, definitions: Map<String, String>, tableName: String) {
-        columnNames.forEach { columnName ->
-            if (!definitions.containsKey(columnName)) {
-                throw IllegalArgumentException("Group-by column `$columnName` not found on `$tableName`.")
+                val result = mutableMapOf<String, ColumnMetadata>()
+                stmt.executeQuery().use { rs ->
+                    while (rs.next()) {
+                        val columnName = rs.getString("COLUMN_NAME")
+                        val columnType = rs.getString("COLUMN_TYPE")
+                        val isNullable = rs.getString("IS_NULLABLE") == "YES"
+                        result[columnName] = ColumnMetadata(columnType, isNullable)
+                    }
+                }
+                result
             }
         }
     }
