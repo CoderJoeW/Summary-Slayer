@@ -31,22 +31,9 @@ abstract class DockerComposeTestBase {
 
             startDockerCompose()
             waitForDatabase()
-
-            // Initialize DatabaseConnection with docker-compose settings
-            DatabaseConnection.initialize(
-                url = JDBC_URL,
-                username = USERNAME,
-                password = PASSWORD
-            )
+            DatabaseConnection.initialize(JDBC_URL, USERNAME, PASSWORD)
 
             println("Docker Compose test environment ready!")
-        }
-
-        @BeforeEach
-        fun cleanupBeforeTest() {
-            cleanDatabase()
-            recreateSchema()
-            reseedDatabase()
         }
 
         @JvmStatic
@@ -140,57 +127,48 @@ abstract class DockerComposeTestBase {
         fun cleanDatabase() {
             DriverManager.getConnection(JDBC_URL, USERNAME, PASSWORD).use { connection ->
                 connection.createStatement().use { statement ->
-                    // Disable foreign key checks temporarily
-                    statement.execute("SET FOREIGN_KEY_CHECKS = 0")
-                    statement.execute("DROP TABLE transactions")
-                    statement.execute("DROP TABLE users")
-                    // Re-enable foreign key checks
-                    statement.execute("SET FOREIGN_KEY_CHECKS = 1")
+                    // Drop any triggers and summary tables left by previous tests
+                    statement.execute("DROP TRIGGER IF EXISTS transactions_after_insert_summary")
+                    statement.execute("DROP TRIGGER IF EXISTS transactions_after_update_summary")
+                    statement.execute("DROP TRIGGER IF EXISTS transactions_after_delete_summary")
+                    statement.execute("DROP TABLE IF EXISTS transactions_user_id_summary")
+
+                    statement.execute("DELETE FROM transactions")
+                    statement.execute("DELETE FROM users")
+                    statement.execute("ALTER TABLE users AUTO_INCREMENT = 1")
+                    statement.execute("ALTER TABLE transactions AUTO_INCREMENT = 1")
                 }
             }
         }
 
+        /**
+         * Seed the database with test data using plain JDBC
+         */
         fun reseedDatabase() {
-            val seedSQL = Thread.currentThread().contextClassLoader.getResource("seed.sql")?.readText()
-                ?: throw IllegalStateException("seed.sql not found in test resources")
-
             DriverManager.getConnection(JDBC_URL, USERNAME, PASSWORD).use { connection ->
                 connection.createStatement().use { statement ->
-                    statement.execute("SET FOREIGN_KEY_CHECKS = 0")
-                    // Split and execute each statement
-                    seedSQL.split(";")
-                        .map { it.trim() }
-                        .filter { it.isNotEmpty() && !it.startsWith("--") }
-                        .forEach { sql ->
-                            if (sql.isNotBlank()) {
-                                statement.execute(sql)
-                            }
-                        }
-                    statement.execute("SET FOREIGN_KEY_CHECKS = 1")
-                }
-            }
-        }
+                    statement.execute("INSERT INTO users (first_name, last_name) VALUES ('John', 'Doe')")
+                    statement.execute("INSERT INTO users (first_name, last_name) VALUES ('Jane', 'Smith')")
+                    statement.execute("INSERT INTO users (first_name, last_name) VALUES ('Bob', 'Johnson')")
 
-        fun recreateSchema() {
-            val schemaSQL = Thread.currentThread().contextClassLoader.getResource("schema.sql")?.readText()
-                ?: throw IllegalStateException("schema.sql not found in test resources")
-
-            DriverManager.getConnection(JDBC_URL, USERNAME, PASSWORD).use { connection ->
-                connection.createStatement().use { statement ->
-                    statement.execute("SET FOREIGN_KEY_CHECKS = 0")
-                    // Split and execute each statement
-                    schemaSQL.split(";")
-                        .map { it.trim() }
-                        .filter { it.isNotEmpty() && !it.startsWith("--") }
-                        .forEach { sql ->
-                            if (sql.isNotBlank()) {
-                                statement.execute(sql)
-                            }
-                        }
-                    statement.execute("SET FOREIGN_KEY_CHECKS = 1")
+                    statement.execute("INSERT INTO transactions (user_id, type, service, cost) VALUES (1, 'DEBIT', 'CALL', 1.00)")
+                    statement.execute("INSERT INTO transactions (user_id, type, service, cost) VALUES (1, 'DEBIT', 'SMS', 0.05)")
+                    statement.execute("INSERT INTO transactions (user_id, type, service, cost) VALUES (1, 'DEBIT', 'DATA', 2.00)")
+                    statement.execute("INSERT INTO transactions (user_id, type, service, cost) VALUES (1, 'CREDIT', 'CALL', 3.00)")
+                    statement.execute("INSERT INTO transactions (user_id, type, service, cost) VALUES (1, 'DEBIT', 'DATA', 4.00)")
+                    statement.execute("INSERT INTO transactions (user_id, type, service, cost) VALUES (2, 'DEBIT', 'CALL', 5.00)")
+                    statement.execute("INSERT INTO transactions (user_id, type, service, cost) VALUES (2, 'DEBIT', 'SMS', 6.00)")
+                    statement.execute("INSERT INTO transactions (user_id, type, service, cost) VALUES (2, 'DEBIT', 'DATA', 7.00)")
+                    statement.execute("INSERT INTO transactions (user_id, type, service, cost) VALUES (3, 'DEBIT', 'CALL', 8.00)")
+                    statement.execute("INSERT INTO transactions (user_id, type, service, cost) VALUES (3, 'CREDIT', 'SMS', 9.30)")
                 }
             }
         }
     }
-}
 
+    @BeforeEach
+    fun cleanupBeforeTest() {
+        cleanDatabase()
+        reseedDatabase()
+    }
+}
