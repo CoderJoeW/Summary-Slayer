@@ -39,9 +39,6 @@ fun main() {
 
     println("Database connected successfully.")
 
-    seed(90000000)
-    return
-
     println("Enter query: ")
     val originalQuery = readln().ifEmpty { query }
 
@@ -51,6 +48,8 @@ fun main() {
     println("Summary table generated successfully.")
     createTriggers(result)
     println("Triggers generated successfully.")
+
+    println("Starting backfill of data")
 }
 
 fun createSummaryTable(result: TriggerGeneratorResult) {
