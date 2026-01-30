@@ -4,17 +4,9 @@ import com.coderjoe.services.SummaryTriggerGeneratorSqlParser
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import kotlin.test.assertNotNull
 import kotlin.use
 
 class IntegrationTest: DockerComposeTestBase() {
-    val query =
-        """
-        SELECT user_id, SUM(cost) as total_cost
-        FROM transactions
-        GROUP BY user_id
-        """.trimIndent()
-
     val parser = SummaryTriggerGeneratorSqlParser()
 
     @Test
@@ -31,7 +23,7 @@ class IntegrationTest: DockerComposeTestBase() {
 
     @Test
     fun `creating summary table has valid structure`() {
-        val result = parser.generate(query)
+        val result = parser.generate(queries["sumCostByUser"]!!)
 
         connect().use { conn ->
             conn.createStatement().execute(result.summaryTable)
@@ -48,11 +40,7 @@ class IntegrationTest: DockerComposeTestBase() {
                 "total_cost" to ColumnSpec(typeName = "DECIMAL", size = 10, decimalDigits = 2, nullable = false)
             )
 
-            for ((colName, expectedSpec) in expected) {
-                val actual = specs[colName]
-                assertNotNull(actual, "Table should have $colName column")
-                assertEquals(expectedSpec, actual, "$colName column spec mismatch")
-            }
+            assertEquals(expected, specs, "Column specs should match")
 
             val primaryKeys = metadata.getPrimaryKeys(null, null, tableName)
             assertTrue(primaryKeys.next(), "Table should have a primary key")
@@ -62,7 +50,7 @@ class IntegrationTest: DockerComposeTestBase() {
 
     @Test
     fun `all three triggers are created successfully`() {
-        val result = parser.generate(query)
+        val result = parser.generate(queries["sumCostByUser"]!!)
 
         connect().use { conn ->
             conn.createStatement().execute(result.summaryTable)
@@ -109,7 +97,7 @@ class IntegrationTest: DockerComposeTestBase() {
 
     @Test
     fun `original table and summary table match after a single insert`() {
-        val result = parser.generate(query)
+        val result = parser.generate(queries["sumCostByUser"]!!)
 
         connect().use { conn ->
             conn.createStatement().execute("DELETE FROM transactions")
@@ -122,7 +110,7 @@ class IntegrationTest: DockerComposeTestBase() {
             Transactions().seed(1)
 
             val originalTableQuery = conn.createStatement()
-                .executeQuery(query)
+                .executeQuery(queries["sumCostByUser"]!!)
 
             val summaryTableQuery = conn.createStatement()
                 .executeQuery("SELECT * FROM transactions_user_id_summary")
