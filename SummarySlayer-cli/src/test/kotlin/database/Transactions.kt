@@ -43,9 +43,9 @@ class TransactionsRepository {
         }
     }
 
-    fun delete(userId: Int) {
+    fun delete(userId: Int, limit: Int? = null) {
         transaction {
-            TransactionsTable.deleteWhere { TransactionsTable.userId eq userId }
+            TransactionsTable.deleteWhere(limit = limit) { TransactionsTable.userId eq userId }
         }
     }
 
