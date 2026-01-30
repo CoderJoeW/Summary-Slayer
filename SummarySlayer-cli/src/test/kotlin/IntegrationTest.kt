@@ -1,11 +1,15 @@
 package com.coderjoe
 import com.coderjoe.database.TransactionsRepository
+import com.coderjoe.database.TransactionsTable
 import com.coderjoe.database.UsersTable
 import com.coderjoe.database.seeders.TransactionsSeeder
+import org.jetbrains.exposed.v1.jdbc.deleteAll
 import com.coderjoe.services.SummaryTriggerGeneratorSqlParser
 import org.jetbrains.exposed.v1.core.eq
+import org.jetbrains.exposed.v1.jdbc.deleteWhere
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
+import org.jetbrains.exposed.v1.jdbc.update
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -57,13 +61,12 @@ class IntegrationTest : DockerComposeTestBase() {
     fun `all three triggers are created successfully`() {
         val result = parser.generate(queries["sumCostByUser"]!!)
 
+        transaction {
+            exec(result.summaryTable)
+            result.triggers.values.forEach{ exec(it)}
+        }
+
         connect().use { conn ->
-            conn.createStatement().execute(result.summaryTable)
-
-            result.triggers["insert"]?.let { conn.createStatement().execute(it) }
-            result.triggers["update"]?.let { conn.createStatement().execute(it) }
-            result.triggers["delete"]?.let { conn.createStatement().execute(it) }
-
             val triggerQuery =
                 """
                 SELECT TRIGGER_NAME, EVENT_MANIPULATION 
@@ -105,16 +108,15 @@ class IntegrationTest : DockerComposeTestBase() {
     fun `original table and summary table match after a single insert`() {
         val result = parser.generate(queries["sumCostByUser"]!!)
 
+        transaction {
+            TransactionsTable.deleteAll()
+            exec(result.summaryTable)
+            result.triggers.values.forEach { exec(it) }
+        }
+
+        TransactionsSeeder().seed(1)
+
         connect().use { conn ->
-            conn.createStatement().execute("DELETE FROM transactions")
-
-            conn.createStatement().execute(result.summaryTable)
-            result.triggers["insert"]?.let { conn.createStatement().execute(it) }
-            result.triggers["update"]?.let { conn.createStatement().execute(it) }
-            result.triggers["delete"]?.let { conn.createStatement().execute(it) }
-
-            TransactionsSeeder().seed(1)
-
             val originalTableQuery =
                 conn.createStatement()
                     .executeQuery(queries["sumCostByUser"]!!)
@@ -140,18 +142,59 @@ class IntegrationTest : DockerComposeTestBase() {
     fun `original table and summary table match after a single delete`() {
         val result = parser.generate(queries["sumCostByUser"]!!)
 
+        transaction {
+            TransactionsTable.deleteAll()
+            exec(result.summaryTable)
+            result.triggers.values.forEach { exec(it) }
+        }
+
+        TransactionsSeeder().seed(10)
+
+        transaction {
+            TransactionsTable.deleteWhere(limit = 1) { TransactionsTable.userId eq 1 }
+        }
+
         connect().use { conn ->
-            conn.createStatement().execute("DELETE FROM transactions")
+            val originalTableQuery =
+                conn.createStatement()
+                    .executeQuery(queries["sumCostByUser"]!!)
 
-            conn.createStatement().execute(result.summaryTable)
-            result.triggers["insert"]?.let { conn.createStatement().execute(it) }
-            result.triggers["update"]?.let { conn.createStatement().execute(it) }
-            result.triggers["delete"]?.let { conn.createStatement().execute(it) }
+            val summaryTableQuery =
+                conn.createStatement()
+                    .executeQuery("SELECT * FROM transactions_user_id_summary")
 
-            TransactionsSeeder().seed(10)
+            while (originalTableQuery.next()) {
+                summaryTableQuery.next()
+                val originalUserId = originalTableQuery.getString("user_id")
+                val originalCost = originalTableQuery.getString("total_cost")
+                val summaryUserId = summaryTableQuery.getString("user_id")
+                val summaryTotalCost = summaryTableQuery.getString("total_cost")
 
-            TransactionsRepository().delete(userId = 1)
+                assertEquals(originalUserId, summaryUserId)
+                assertEquals(originalCost, summaryTotalCost)
+            }
+        }
+    }
 
+    @Test
+    fun `original table and summary table match after a single update`() {
+        val result = parser.generate(queries["sumCostByUser"]!!)
+
+        transaction {
+            TransactionsTable.deleteAll()
+            exec(result.summaryTable)
+            result.triggers.values.forEach { exec(it) }
+        }
+
+        TransactionsSeeder().seed(10)
+
+        transaction {
+            TransactionsTable.update({ TransactionsTable.userId eq 1 }, limit = 1) {
+                it[cost] = 50.0
+            }
+        }
+
+        connect().use { conn ->
             val originalTableQuery =
                 conn.createStatement()
                     .executeQuery(queries["sumCostByUser"]!!)
