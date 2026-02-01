@@ -1,15 +1,20 @@
-# 🗡️ Summary Slayer
-
-**Kill summary tables. Get instant, always-up-to-date results.**
-
-Summary Slayer is a **materialized view engine for MariaDB** that turns a single query into a fully managed, incrementally updated summary table.
-
-You provide the query.  
-Summary Slayer generates the triggers, keeps the data in sync, and guarantees fast reads—automatically.
+> **⚠️ ALPHA WARNING**
+> This is a very early alpha product under active development. Expect rapid changes, incomplete features, and potential breaking changes. Not recommended for production use at this time.
 
 ---
 
-## 🚀 What Summary Slayer Does
+# ⚡ LightningTables (aka the summary slayer)
+
+**Kill summary tables. Get instant, always-up-to-date results.**
+
+LightningTables is a **materialized view engine for MariaDB** that turns a single query into a fully managed, incrementally updated summary table.
+
+You provide the query.  
+LightningTables generates the triggers, keeps the data in sync, and guarantees fast reads—automatically.
+
+---
+
+## 🚀 What LightningTables Does
 
 - Takes a query and **creates a materialized summary table**
 - Automatically generates the **trigger code** required to keep it updated
@@ -36,9 +41,9 @@ When they fail, they fail silently—and your data becomes wrong.
 
 ---
 
-## ✅ The Summary Slayer Approach
+## ✅ The LightningTables Approach
 
-Summary Slayer replaces manual summary tables with **incrementally maintained materialized views**.
+LightningTables replaces manual summary tables with **incrementally maintained materialized views**.
 
 - Updates happen **at write time**
 - Data is **always correct**
@@ -58,20 +63,20 @@ To create a summary table, the base table **must** contain:
 - An `updated_at` column
 - The column must represent the **last modification time of the row**
 
-This field is foundational to Summary Slayer’s correctness and locking strategy.
+This field is foundational to LightningTables’s correctness and locking strategy.
 
 ---
 
-## 🧠 How Summary Slayer Works Internally
+## 🧠 How LightningTables Works Internally
 
 Creating a summary table while live traffic is ongoing is the hard problem.  
-Summary Slayer solves this with **minimal locking**, **transactional correctness**, and **guaranteed backfill accuracy**.
+LightningTables solves this with **minimal locking**, **transactional correctness**, and **guaranteed backfill accuracy**.
 
 ---
 
 ### 🔒 Step 1: Acquire a Minimal Write Lock
 
-When creating a new summary table, Summary Slayer briefly acquires a **small write lock** on the base table.
+When creating a new summary table, LightningTables briefly acquires a **small write lock** on the base table.
 
 During this lock, it performs exactly two operations:
 
@@ -99,7 +104,7 @@ From this point forward, the summary table is **live and correct**.
 
 ### 🔄 Step 3: Backfill Historical Data (Safely)
 
-With triggers handling new writes, Summary Slayer begins backfilling older data **based on the captured timestamp**:
+With triggers handling new writes, LightningTables begins backfilling older data **based on the captured timestamp**:
 
 - Only rows where `updated_at <= lock_timestamp` are included in the backfill
 - Data is processed **in batches**
@@ -174,7 +179,7 @@ Cron jobs optimize *when* data updates—not *how*.
 
 ### ✅ Why Triggers Work Better
 
-Summary Slayer uses **database triggers** to apply **incremental updates at write time**.
+LightningTables uses **database triggers** to apply **incremental updates at write time**.
 
 - Updates are immediate
 - No rebuilds
@@ -255,7 +260,7 @@ If the data exists, the summary is correct.
 Yes—and more.
 
 Standard views are recomputed at query time.  
-Summary Slayer summaries are **precomputed and incrementally maintained**.
+LightningTables summaries are **precomputed and incrementally maintained**.
 
 ---
 
@@ -272,7 +277,7 @@ Support will expand as the engine evolves.
 ### Can I rebuild a summary if needed?
 Yes.
 
-Summary Slayer can:
+LightningTables can:
 
 - Rebuild summaries from scratch
 - Validate correctness
@@ -311,7 +316,7 @@ Expect rapid iteration and breaking changes.
 
 > *If data changes, derived data should update immediately.*
 
-Summary Slayer exists to make correctness and performance the default—not an ongoing maintenance task.
+LightningTables exists to make correctness and performance the default—not an ongoing maintenance task.
 
 ---
 
@@ -319,4 +324,4 @@ Summary Slayer exists to make correctness and performance the default—not an o
 
 If you’re still maintaining summary tables by hand…
 
-**Summary Slayer is built to replace them.**
+**LightningTables is built to replace them.**
