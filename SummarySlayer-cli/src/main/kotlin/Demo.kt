@@ -43,6 +43,7 @@ class Demo {
         println("  * Lightning Table created")
 
         println("  o Running backfill (creates triggers + populates)...")
+        val backfillStartTime = System.currentTimeMillis()
         BackfillService().backfill(
             result.backfillContext,
             result.triggers.values.toList(),
@@ -51,7 +52,23 @@ class Demo {
             val filled = (completed.toDouble() / total * barWidth).toInt()
             val bar = "█".repeat(filled) + "░".repeat(barWidth - filled)
             val pct = (completed.toDouble() / total * 100).toInt()
-            print("\r  [$bar] $pct%  ($completed/$total chunks)")
+
+            val elapsedMs = System.currentTimeMillis() - backfillStartTime
+            val elapsedSec = elapsedMs / 1000.0
+            val speed = if (elapsedSec > 0) completed / elapsedSec else 0.0
+
+            val progressInfo = if (completed < total && speed > 0) {
+                val remainingChunks = total - completed
+                val etaSec = (remainingChunks / speed).toInt()
+                val elapsedStr = formatTime(elapsedSec.toInt())
+                val etaStr = formatTime(etaSec)
+                "Elapsed: $elapsedStr | ETA: $etaStr | Speed: ${"%.1f".format(speed)} chunks/sec"
+            } else {
+                val elapsedStr = formatTime(elapsedSec.toInt())
+                "Completed in $elapsedStr"
+            }
+
+            print("\r  [$bar] $pct%  ($completed/$total chunks) | $progressInfo")
             if (completed == total) println()
         }
         println("  * Backfill complete - triggers active")
@@ -211,16 +228,7 @@ class Demo {
             queryExecutor.shutdownNow()
             seedExecutor.shutdownNow()
 
-            val totalElapsedSecs = (System.nanoTime() - startTimeNanos) / 1_000_000_000.0
             screen.stopScreen()
-
-            ui.renderFinalReport(
-                snapshot(leftStats),
-                snapshot(rightStats),
-                lightningTableName,
-                totalElapsedSecs,
-                recordsSeeded.get(),
-            )
         }
     }
 
@@ -289,5 +297,11 @@ class Demo {
         transaction {
             exec(result.lightningTable)
         }
+    }
+
+    private fun formatTime(seconds: Int): String {
+        val mins = seconds / 60
+        val secs = seconds % 60
+        return "%02d:%02d".format(mins, secs)
     }
 }
