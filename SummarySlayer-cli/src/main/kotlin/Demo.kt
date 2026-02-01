@@ -95,8 +95,8 @@ class Demo {
         val username = readln().ifEmpty { "root" }
         print("  Password (****)         : ")
         val password = readln().ifEmpty { "rootpassword" }
-        print("  Database (lightningtables): ")
-        val dbName = readln().ifEmpty { "lightningtables" }
+        print("  Database (summaryslayer): ")
+        val dbName = readln().ifEmpty { "summaryslayer" }
 
         println()
         return DbConfig(host, port, username, password, dbName)
