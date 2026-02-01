@@ -11,15 +11,15 @@ import net.sf.jsqlparser.expression.Function
 
 data class BackfillContext(
     val baseTableName: String,
-    val summaryTableName: String,
+    val lightningTableName: String,
     val groupByColumns: List<String>,
     val aggregates: List<AggregateInfo>,
     val whereClause: String?
 )
 
 data class TriggerGeneratorResult(
-    val summaryTableName: String,
-    val summaryTable: String,
+    val lightningTableName: String,
+    val lightningTable: String,
     val triggers: Map<String, String>,
     val preview: String,
     val backfillContext: BackfillContext
@@ -56,30 +56,30 @@ private data class ParsedQuery(
     val passThroughColumns: List<PassColumnInfo>
 )
 
-class SummaryTriggerGeneratorSqlParser {
+class LightningTableTriggerGeneratorSqlParser {
 
-    fun generate(query: String, summaryTable: String? = null): TriggerGeneratorResult {
+    fun generate(query: String, lightningTable: String? = null): TriggerGeneratorResult {
         val normalizedQuery = normalizeQuery(query)
         val plainSelect = parseAndValidateQuery(normalizedQuery)
         val parsedQuery = extractQueryComponents(plainSelect, normalizedQuery)
 
         val columnDefinitions = loadColumnDefinitionsIfNeeded(parsedQuery.baseTableName, parsedQuery.groupByColumns)
         val aggregateColumnTypes = loadAggregateColumnTypes(parsedQuery.baseTableName, parsedQuery.aggregates)
-        val summaryTableName = summaryTable ?: generateSummaryTableName(parsedQuery.baseTableName, parsedQuery.groupByColumns)
-        val tableDdl = buildSummaryTableDDL(summaryTableName, columnDefinitions, parsedQuery.aggregates, aggregateColumnTypes)
+        val lightningTableName = lightningTable ?: generateLightningTableName(parsedQuery.baseTableName, parsedQuery.groupByColumns)
+        val tableDdl = buildLightningTableDDL(lightningTableName, columnDefinitions, parsedQuery.aggregates, aggregateColumnTypes)
 
         val wherePredicates = buildWherePredicates(parsedQuery.whereClause)
         val upsertComponents = buildUpsertComponents(columnDefinitions, parsedQuery.aggregates)
-        val triggers = buildTriggers(parsedQuery.baseTableName, summaryTableName, wherePredicates, upsertComponents)
+        val triggers = buildTriggers(parsedQuery.baseTableName, lightningTableName, wherePredicates, upsertComponents)
 
         return TriggerGeneratorResult(
-            summaryTableName = summaryTableName,
-            summaryTable = tableDdl,
+            lightningTableName = lightningTableName,
+            lightningTable = tableDdl,
             triggers = triggers,
             preview = formatPreview(tableDdl, triggers),
             backfillContext = BackfillContext(
                 baseTableName = parsedQuery.baseTableName,
-                summaryTableName = summaryTableName,
+                lightningTableName = lightningTableName,
                 groupByColumns = parsedQuery.groupByColumns,
                 aggregates = parsedQuery.aggregates,
                 whereClause = parsedQuery.whereClause
@@ -320,16 +320,16 @@ class SummaryTriggerGeneratorSqlParser {
         }
     }
 
-    private fun generateSummaryTableName(baseTableName: String, groupByColumns: List<String>): String {
+    private fun generateLightningTableName(baseTableName: String, groupByColumns: List<String>): String {
         return if (groupByColumns.isEmpty()) {
-            convertToSnakeCase("${baseTableName}_summary")
+            convertToSnakeCase("${baseTableName}_lightning")
         } else {
-            convertToSnakeCase("${baseTableName}_${groupByColumns.joinToString("_")}_summary")
+            convertToSnakeCase("${baseTableName}_${groupByColumns.joinToString("_")}_lightning")
         }
     }
 
-    private fun buildSummaryTableDDL(
-        summaryTableName: String,
+    private fun buildLightningTableDDL(
+        lightningTableName: String,
         keyColumnDefinitions: Map<String, String>,
         aggregates: List<AggregateInfo>,
         aggregateColumnTypes: Map<String, String>
@@ -340,13 +340,13 @@ class SummaryTriggerGeneratorSqlParser {
             buildGroupedTableStructure(keyColumnDefinitions, aggregates, aggregateColumnTypes)
         }
 
-        return formatTableDdl(summaryTableName, allColumnDefinitions, primaryKeyColumns)
+        return formatTableDdl(lightningTableName, allColumnDefinitions, primaryKeyColumns)
     }
 
     private fun buildNonGroupedTableStructure(aggregates: List<AggregateInfo>, aggregateColumnTypes: Map<String, String>): Pair<List<String>, String> {
-        val columnDefinitions = listOf("`summary_id` TINYINT UNSIGNED NOT NULL DEFAULT 1") +
+        val columnDefinitions = listOf("`lightning_id` TINYINT UNSIGNED NOT NULL DEFAULT 1") +
             aggregates.map { buildAggregateColumnDefinition(it, aggregateColumnTypes) }
-        return Pair(columnDefinitions, "`summary_id`")
+        return Pair(columnDefinitions, "`lightning_id`")
     }
 
     private fun buildGroupedTableStructure(
@@ -399,7 +399,7 @@ class SummaryTriggerGeneratorSqlParser {
 
     private fun buildKeyExpressions(columnDefinitions: Map<String, String>): Triple<List<String>, List<String>, List<String>> {
         return if (columnDefinitions.isEmpty()) {
-            Triple(listOf("`summary_id`"), listOf("1"), listOf("1"))
+            Triple(listOf("`lightning_id`"), listOf("1"), listOf("1"))
         } else {
             Triple(
                 columnDefinitions.keys.map { "`$it`" },
@@ -453,14 +453,14 @@ class SummaryTriggerGeneratorSqlParser {
 
     private fun buildTriggers(
         baseTableName: String,
-        summaryTableName: String,
+        lightningTableName: String,
         wherePredicates: Pair<String, String>,
         upsertComponents: UpsertComponents
     ): Map<String, String> {
         val (oldRowPredicate, newRowPredicate) = wherePredicates
 
         val oldUpsertStatement = TriggerGenerator().buildUpsertStatement(
-            summaryTableName,
+            lightningTableName,
             upsertComponents.keyColumns,
             upsertComponents.keyOldExpressions,
             upsertComponents.oldInsertColumns,
@@ -469,7 +469,7 @@ class SummaryTriggerGeneratorSqlParser {
         )
 
         val newUpsertStatement = TriggerGenerator().buildUpsertStatement(
-            summaryTableName,
+            lightningTableName,
             upsertComponents.keyColumns,
             upsertComponents.keyNewExpressions,
             upsertComponents.newInsertColumns,
@@ -478,7 +478,7 @@ class SummaryTriggerGeneratorSqlParser {
         )
 
         val cleanupStatement = buildCleanupStatement(
-            summaryTableName,
+            lightningTableName,
             baseTableName,
             upsertComponents.keyColumns,
             upsertComponents.keyOldExpressions
@@ -494,7 +494,7 @@ class SummaryTriggerGeneratorSqlParser {
     }
 
     private fun buildCleanupStatement(
-        summaryTableName: String,
+        lightningTableName: String,
         baseTableName: String,
         keyColumns: List<String>,
         keyOldExpressions: List<String>
@@ -503,11 +503,11 @@ class SummaryTriggerGeneratorSqlParser {
             .joinToString(" AND ") { (col, oldExpr) -> "$col = $oldExpr" }
         val existsWhereClause = keyColumns.zip(keyOldExpressions)
             .joinToString(" AND ") { (col, oldExpr) -> "$col = $oldExpr" }
-        return "DELETE FROM `$summaryTableName` WHERE $summaryWhereClause AND NOT EXISTS (SELECT 1 FROM `$baseTableName` WHERE $existsWhereClause);"
+        return "DELETE FROM `$lightningTableName` WHERE $summaryWhereClause AND NOT EXISTS (SELECT 1 FROM `$baseTableName` WHERE $existsWhereClause);"
     }
 
     private fun formatPreview(tableDdl: String, triggers: Map<String, String>): String {
-        return """-- Summary table to create:
+        return """-- Lightning table to create:
 $tableDdl
 
 -- Triggers to create:
