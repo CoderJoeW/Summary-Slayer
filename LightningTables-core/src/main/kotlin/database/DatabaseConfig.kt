@@ -1,4 +1,4 @@
-package com.coderjoe.database
+package com.coderjoe.lightingtable.core.database
 
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource

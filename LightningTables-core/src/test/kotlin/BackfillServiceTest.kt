@@ -1,10 +1,10 @@
-package com.coderjoe
+package com.coderjoe.lightingtable.core
 
-import com.coderjoe.database.TransactionService
-import com.coderjoe.database.TransactionType
-import com.coderjoe.database.TransactionsTable
-import com.coderjoe.services.BackfillService
-import com.coderjoe.services.LightningTableTriggerGeneratorSqlParser
+import com.coderjoe.lightingtable.core.database.TransactionService
+import com.coderjoe.lightingtable.core.database.TransactionType
+import com.coderjoe.lightingtable.core.database.TransactionsTable
+import com.coderjoe.lightingtable.core.services.BackfillService
+import com.coderjoe.lightingtable.core.services.LightningTableTriggerGeneratorSqlParser
 import org.jetbrains.exposed.v1.jdbc.insert
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -915,11 +915,11 @@ class BackfillServiceTest : DockerComposeTestBase() {
     fun `backfill validates updated_at column exists`() {
         executeSQL("CREATE TABLE IF NOT EXISTS no_ts_table (id INT AUTO_INCREMENT PRIMARY KEY, val INT)")
         try {
-            val context = com.coderjoe.services.BackfillContext(
+            val context = com.coderjoe.lightingtable.core.services.BackfillContext(
                 baseTableName = "no_ts_table",
                 lightningTableName = "no_ts_summary",
                 groupByColumns = emptyList(),
-                aggregates = listOf(com.coderjoe.services.AggregateInfo("COUNT", "*", "row_count")),
+                aggregates = listOf(com.coderjoe.lightingtable.core.services.AggregateInfo("COUNT", "*", "row_count")),
                 whereClause = null
             )
             assertThrows(IllegalStateException::class.java) {

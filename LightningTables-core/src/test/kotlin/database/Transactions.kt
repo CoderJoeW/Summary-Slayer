@@ -1,4 +1,4 @@
-package com.coderjoe.database
+package com.coderjoe.lightingtable.core.database
 
 import org.jetbrains.exposed.v1.core.Table
 import org.jetbrains.exposed.v1.core.eq

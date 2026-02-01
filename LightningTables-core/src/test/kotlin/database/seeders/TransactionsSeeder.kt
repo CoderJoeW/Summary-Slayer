@@ -1,8 +1,8 @@
-package com.coderjoe.database.seeders
+package com.coderjoe.lightingtable.core.database.seeders
 
-import com.coderjoe.database.TransactionService
-import com.coderjoe.database.TransactionType
-import com.coderjoe.database.TransactionsRepository
+import com.coderjoe.lightingtable.core.database.TransactionService
+import com.coderjoe.lightingtable.core.database.TransactionType
+import com.coderjoe.lightingtable.core.database.TransactionsRepository
 import kotlin.random.Random
 import kotlin.text.insert
 

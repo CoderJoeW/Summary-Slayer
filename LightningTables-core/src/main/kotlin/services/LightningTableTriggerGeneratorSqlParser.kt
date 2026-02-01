@@ -1,4 +1,4 @@
-package com.coderjoe.services
+package com.coderjoe.lightingtable.core.services
 
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import net.sf.jsqlparser.parser.CCJSqlParserUtil

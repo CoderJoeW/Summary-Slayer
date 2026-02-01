@@ -1,4 +1,4 @@
-package com.coderjoe.services
+package com.coderjoe.lightingtable.core.services
 
 class TriggerGenerator {
     fun buildUpsertStatement(

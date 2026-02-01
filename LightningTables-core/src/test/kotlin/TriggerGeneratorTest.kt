@@ -1,6 +1,6 @@
-package com.coderjoe
+package com.coderjoe.lightingtable.core
 
-import com.coderjoe.services.TriggerGenerator
+import com.coderjoe.lightingtable.core.services.TriggerGenerator
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
