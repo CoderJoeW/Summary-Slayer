@@ -4,7 +4,7 @@ import com.coderjoe.database.TransactionsTable
 import com.coderjoe.database.UsersTable
 import com.coderjoe.database.seeders.TransactionsSeeder
 import org.jetbrains.exposed.v1.jdbc.deleteAll
-import com.coderjoe.services.SummaryTriggerGeneratorSqlParser
+import com.coderjoe.services.LightningTableTriggerGeneratorSqlParser
 import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.jdbc.deleteWhere
 import org.jetbrains.exposed.v1.jdbc.selectAll
@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 class IntegrationTest : DockerComposeTestBase() {
-    val parser = SummaryTriggerGeneratorSqlParser()
+    val parser = LightningTableTriggerGeneratorSqlParser()
 
     @Test
     fun `sanity check - can query seeded user data`() {
@@ -30,15 +30,15 @@ class IntegrationTest : DockerComposeTestBase() {
     }
 
     @Test
-    fun `creating summary table has valid structure`() {
+    fun `creating lightning table has valid structure`() {
         val result = parser.generate(queries["sumCostByUser"]!!)
 
         connect().use { conn ->
-            conn.createStatement().execute(result.summaryTable)
+            conn.createStatement().execute(result.lightningTable)
 
             val metadata = conn.metaData
-            val tables = metadata.getTables(null, null, "%summary%", arrayOf("TABLE"))
-            assertTrue(tables.next(), "Summary table should be created")
+            val tables = metadata.getTables(null, null, "%lightning%", arrayOf("TABLE"))
+            assertTrue(tables.next(), "Lightning table should be created")
             val tableName = tables.getString("TABLE_NAME")
 
             val specs = conn.getColumnSpecs(tableName)
@@ -62,7 +62,7 @@ class IntegrationTest : DockerComposeTestBase() {
         val result = parser.generate(queries["sumCostByUser"]!!)
 
         transaction {
-            exec(result.summaryTable)
+            exec(result.lightningTable)
             result.triggers.values.forEach{ exec(it)}
         }
 
@@ -105,12 +105,12 @@ class IntegrationTest : DockerComposeTestBase() {
     }
 
     @Test
-    fun `original table and summary table match after a single insert`() {
+    fun `original table and lightning table match after a single insert`() {
         val result = parser.generate(queries["sumCostByUser"]!!)
 
         transaction {
             TransactionsTable.deleteAll()
-            exec(result.summaryTable)
+            exec(result.lightningTable)
             result.triggers.values.forEach { exec(it) }
         }
 
@@ -121,30 +121,30 @@ class IntegrationTest : DockerComposeTestBase() {
                 conn.createStatement()
                     .executeQuery(queries["sumCostByUser"]!!)
 
-            val summaryTableQuery =
+            val lightningTableQuery =
                 conn.createStatement()
-                    .executeQuery("SELECT * FROM transactions_user_id_summary")
+                    .executeQuery("SELECT * FROM transactions_user_id_lightning")
 
             while (originalTableQuery.next()) {
-                summaryTableQuery.next()
+                lightningTableQuery.next()
                 val originalUserId = originalTableQuery.getString("user_id")
                 val originalCost = originalTableQuery.getString("total_cost")
-                val summaryUserId = summaryTableQuery.getString("user_id")
-                val summaryTotalCost = summaryTableQuery.getString("total_cost")
+                val lightningUserId = lightningTableQuery.getString("user_id")
+                val lightningTotalCost = lightningTableQuery.getString("total_cost")
 
-                assertEquals(originalUserId, summaryUserId)
-                assertEquals(originalCost, summaryTotalCost)
+                assertEquals(originalUserId, lightningUserId)
+                assertEquals(originalCost, lightningTotalCost)
             }
         }
     }
 
     @Test
-    fun `original table and summary table match after a single delete`() {
+    fun `original table and lightning table match after a single delete`() {
         val result = parser.generate(queries["sumCostByUser"]!!)
 
         transaction {
             TransactionsTable.deleteAll()
-            exec(result.summaryTable)
+            exec(result.lightningTable)
             result.triggers.values.forEach { exec(it) }
         }
 
@@ -159,30 +159,30 @@ class IntegrationTest : DockerComposeTestBase() {
                 conn.createStatement()
                     .executeQuery(queries["sumCostByUser"]!!)
 
-            val summaryTableQuery =
+            val lightningTableQuery =
                 conn.createStatement()
-                    .executeQuery("SELECT * FROM transactions_user_id_summary")
+                    .executeQuery("SELECT * FROM transactions_user_id_lightning")
 
             while (originalTableQuery.next()) {
-                summaryTableQuery.next()
+                lightningTableQuery.next()
                 val originalUserId = originalTableQuery.getString("user_id")
                 val originalCost = originalTableQuery.getString("total_cost")
-                val summaryUserId = summaryTableQuery.getString("user_id")
-                val summaryTotalCost = summaryTableQuery.getString("total_cost")
+                val lightningUserId = lightningTableQuery.getString("user_id")
+                val lightningTotalCost = lightningTableQuery.getString("total_cost")
 
-                assertEquals(originalUserId, summaryUserId)
-                assertEquals(originalCost, summaryTotalCost)
+                assertEquals(originalUserId, lightningUserId)
+                assertEquals(originalCost, lightningTotalCost)
             }
         }
     }
 
     @Test
-    fun `original table and summary table match after a single update`() {
+    fun `original table and lightning table match after a single update`() {
         val result = parser.generate(queries["sumCostByUser"]!!)
 
         transaction {
             TransactionsTable.deleteAll()
-            exec(result.summaryTable)
+            exec(result.lightningTable)
             result.triggers.values.forEach { exec(it) }
         }
 
@@ -199,19 +199,19 @@ class IntegrationTest : DockerComposeTestBase() {
                 conn.createStatement()
                     .executeQuery(queries["sumCostByUser"]!!)
 
-            val summaryTableQuery =
+            val lightningTableQuery =
                 conn.createStatement()
-                    .executeQuery("SELECT * FROM transactions_user_id_summary")
+                    .executeQuery("SELECT * FROM transactions_user_id_lightning")
 
             while (originalTableQuery.next()) {
-                summaryTableQuery.next()
+                lightningTableQuery.next()
                 val originalUserId = originalTableQuery.getString("user_id")
                 val originalCost = originalTableQuery.getString("total_cost")
-                val summaryUserId = summaryTableQuery.getString("user_id")
-                val summaryTotalCost = summaryTableQuery.getString("total_cost")
+                val lightningUserId = lightningTableQuery.getString("user_id")
+                val lightningTotalCost = lightningTableQuery.getString("total_cost")
 
-                assertEquals(originalUserId, summaryUserId)
-                assertEquals(originalCost, summaryTotalCost)
+                assertEquals(originalUserId, lightningUserId)
+                assertEquals(originalCost, lightningTotalCost)
             }
         }
     }

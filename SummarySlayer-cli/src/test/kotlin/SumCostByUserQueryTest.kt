@@ -4,7 +4,7 @@ import com.coderjoe.database.TransactionService
 import com.coderjoe.database.TransactionType
 import com.coderjoe.database.TransactionsTable
 import com.coderjoe.database.seeders.TransactionsSeeder
-import com.coderjoe.services.SummaryTriggerGeneratorSqlParser
+import com.coderjoe.services.LightningTableTriggerGeneratorSqlParser
 import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.jdbc.deleteAll
 import org.jetbrains.exposed.v1.jdbc.deleteWhere
@@ -16,15 +16,15 @@ import org.junit.jupiter.api.Test
 import java.math.BigDecimal
 
 class SumCostByUserQueryTest : DockerComposeTestBase() {
-    private val parser = SummaryTriggerGeneratorSqlParser()
+    private val parser = LightningTableTriggerGeneratorSqlParser()
     private val query = queries["sumCostByUser"]!!
-    private val summaryTableName = "transactions_user_id_summary"
+    private val lightningTableName = "transactions_user_id_lightning"
 
-    private fun setupTriggersAndSummaryTable() {
+    private fun setupTriggersAndLightningTable() {
         val result = parser.generate(query)
         transaction {
             TransactionsTable.deleteAll()
-            exec(result.summaryTable)
+            exec(result.lightningTable)
             result.triggers.values.forEach { exec(it) }
         }
     }
@@ -40,9 +40,9 @@ class SumCostByUserQueryTest : DockerComposeTestBase() {
         }
     }
 
-    private fun querySummaryTable(): Map<Int, BigDecimal> {
+    private fun queryLightningTable(): Map<Int, BigDecimal> {
         connect().use { conn ->
-            val rs = conn.createStatement().executeQuery("SELECT * FROM $summaryTableName")
+            val rs = conn.createStatement().executeQuery("SELECT * FROM $lightningTableName")
             val results = mutableMapOf<Int, BigDecimal>()
             while (rs.next()) {
                 results[rs.getInt("user_id")] = rs.getBigDecimal("total_cost")
@@ -53,8 +53,8 @@ class SumCostByUserQueryTest : DockerComposeTestBase() {
 
     private fun assertTablesMatch(context: String = "") {
         val original = queryOriginalTable()
-        val summary = querySummaryTable()
-        assertEquals(original, summary, "Summary table should match original query $context".trim())
+        val lightning = queryLightningTable()
+        assertEquals(original, lightning, "Lightning table should match original query $context".trim())
     }
 
     private fun insertTransaction(userId: Int, cost: Double) {
@@ -72,14 +72,14 @@ class SumCostByUserQueryTest : DockerComposeTestBase() {
 
     @Test
     fun `tables match after a single insert`() {
-        setupTriggersAndSummaryTable()
+        setupTriggersAndLightningTable()
         insertTransaction(1, 25.00)
         assertTablesMatch("after single insert")
     }
 
     @Test
     fun `tables match after inserting for a new user`() {
-        setupTriggersAndSummaryTable()
+        setupTriggersAndLightningTable()
         insertTransaction(1, 10.00)
         insertTransaction(2, 20.00)
         assertTablesMatch("after inserting for two different users")
@@ -87,21 +87,21 @@ class SumCostByUserQueryTest : DockerComposeTestBase() {
 
     @Test
     fun `tables match after inserting zero-cost transaction`() {
-        setupTriggersAndSummaryTable()
+        setupTriggersAndLightningTable()
         insertTransaction(1, 0.00)
         assertTablesMatch("after zero-cost insert")
     }
 
     @Test
     fun `tables match after inserting small fractional cost`() {
-        setupTriggersAndSummaryTable()
+        setupTriggersAndLightningTable()
         insertTransaction(1, 0.01)
         assertTablesMatch("after 0.01 cost insert")
     }
 
     @Test
     fun `tables match after inserting large cost`() {
-        setupTriggersAndSummaryTable()
+        setupTriggersAndLightningTable()
         insertTransaction(1, 99999999.99)
         assertTablesMatch("after max decimal value insert")
     }
@@ -110,7 +110,7 @@ class SumCostByUserQueryTest : DockerComposeTestBase() {
 
     @Test
     fun `tables match after multiple inserts for the same user`() {
-        setupTriggersAndSummaryTable()
+        setupTriggersAndLightningTable()
         insertTransaction(1, 10.00)
         insertTransaction(1, 20.00)
         insertTransaction(1, 30.00)
@@ -119,7 +119,7 @@ class SumCostByUserQueryTest : DockerComposeTestBase() {
 
     @Test
     fun `tables match after many small inserts accumulating`() {
-        setupTriggersAndSummaryTable()
+        setupTriggersAndLightningTable()
         repeat(100) {
             insertTransaction(1, 0.01)
         }
@@ -130,7 +130,7 @@ class SumCostByUserQueryTest : DockerComposeTestBase() {
 
     @Test
     fun `tables match after interleaved inserts across multiple users`() {
-        setupTriggersAndSummaryTable()
+        setupTriggersAndLightningTable()
         insertTransaction(1, 10.00)
         insertTransaction(2, 20.00)
         insertTransaction(3, 30.00)
@@ -142,7 +142,7 @@ class SumCostByUserQueryTest : DockerComposeTestBase() {
 
     @Test
     fun `tables match after bulk inserts across users`() {
-        setupTriggersAndSummaryTable()
+        setupTriggersAndLightningTable()
         val usersAndCounts = mapOf(1 to 50, 2 to 100, 3 to 25)
         usersAndCounts.forEach { (userId, count) ->
             repeat(count) {
@@ -156,7 +156,7 @@ class SumCostByUserQueryTest : DockerComposeTestBase() {
 
     @Test
     fun `tables match after deleting one transaction from a user with multiple`() {
-        setupTriggersAndSummaryTable()
+        setupTriggersAndLightningTable()
         insertTransaction(1, 10.00)
         insertTransaction(1, 20.00)
         insertTransaction(1, 30.00)
@@ -169,7 +169,7 @@ class SumCostByUserQueryTest : DockerComposeTestBase() {
 
     @Test
     fun `tables match after deleting the only transaction for a user`() {
-        setupTriggersAndSummaryTable()
+        setupTriggersAndLightningTable()
         insertTransaction(1, 50.00)
 
         transaction {
@@ -180,7 +180,7 @@ class SumCostByUserQueryTest : DockerComposeTestBase() {
 
     @Test
     fun `tables match after deleting all transactions for one user among many`() {
-        setupTriggersAndSummaryTable()
+        setupTriggersAndLightningTable()
         insertTransaction(1, 10.00)
         insertTransaction(2, 20.00)
         insertTransaction(3, 30.00)
@@ -193,7 +193,7 @@ class SumCostByUserQueryTest : DockerComposeTestBase() {
 
     @Test
     fun `tables match after deleting all transactions from all users`() {
-        setupTriggersAndSummaryTable()
+        setupTriggersAndLightningTable()
         insertTransaction(1, 10.00)
         insertTransaction(2, 20.00)
         insertTransaction(3, 30.00)
@@ -206,7 +206,7 @@ class SumCostByUserQueryTest : DockerComposeTestBase() {
 
     @Test
     fun `tables match after multiple sequential deletes from same user`() {
-        setupTriggersAndSummaryTable()
+        setupTriggersAndLightningTable()
         insertTransaction(1, 10.00)
         insertTransaction(1, 20.00)
         insertTransaction(1, 30.00)
@@ -232,7 +232,7 @@ class SumCostByUserQueryTest : DockerComposeTestBase() {
 
     @Test
     fun `tables match after updating a transaction cost`() {
-        setupTriggersAndSummaryTable()
+        setupTriggersAndLightningTable()
         insertTransaction(1, 10.00)
         insertTransaction(1, 20.00)
 
@@ -246,7 +246,7 @@ class SumCostByUserQueryTest : DockerComposeTestBase() {
 
     @Test
     fun `tables match after updating cost to zero`() {
-        setupTriggersAndSummaryTable()
+        setupTriggersAndLightningTable()
         insertTransaction(1, 50.00)
 
         transaction {
@@ -259,7 +259,7 @@ class SumCostByUserQueryTest : DockerComposeTestBase() {
 
     @Test
     fun `tables match after updating cost from zero to non-zero`() {
-        setupTriggersAndSummaryTable()
+        setupTriggersAndLightningTable()
         insertTransaction(1, 0.00)
 
         transaction {
@@ -272,7 +272,7 @@ class SumCostByUserQueryTest : DockerComposeTestBase() {
 
     @Test
     fun `tables match after updating cost to large value`() {
-        setupTriggersAndSummaryTable()
+        setupTriggersAndLightningTable()
         insertTransaction(1, 1.00)
 
         transaction {
@@ -285,7 +285,7 @@ class SumCostByUserQueryTest : DockerComposeTestBase() {
 
     @Test
     fun `tables match after updating all transactions for a user`() {
-        setupTriggersAndSummaryTable()
+        setupTriggersAndLightningTable()
         insertTransaction(1, 10.00)
         insertTransaction(1, 20.00)
         insertTransaction(1, 30.00)
@@ -302,7 +302,7 @@ class SumCostByUserQueryTest : DockerComposeTestBase() {
 
     @Test
     fun `tables match after changing user_id on a transaction`() {
-        setupTriggersAndSummaryTable()
+        setupTriggersAndLightningTable()
         insertTransaction(1, 10.00)
         insertTransaction(2, 20.00)
 
@@ -316,7 +316,7 @@ class SumCostByUserQueryTest : DockerComposeTestBase() {
 
     @Test
     fun `tables match after moving all transactions from one user to another`() {
-        setupTriggersAndSummaryTable()
+        setupTriggersAndLightningTable()
         insertTransaction(1, 10.00)
         insertTransaction(1, 20.00)
         insertTransaction(2, 5.00)
@@ -331,7 +331,7 @@ class SumCostByUserQueryTest : DockerComposeTestBase() {
 
     @Test
     fun `tables match after swapping user_ids between transactions`() {
-        setupTriggersAndSummaryTable()
+        setupTriggersAndLightningTable()
         insertTransaction(1, 10.00)
         insertTransaction(2, 20.00)
 
@@ -351,7 +351,7 @@ class SumCostByUserQueryTest : DockerComposeTestBase() {
 
     @Test
     fun `tables match after insert then delete`() {
-        setupTriggersAndSummaryTable()
+        setupTriggersAndLightningTable()
         insertTransaction(1, 10.00)
         insertTransaction(1, 20.00)
 
@@ -363,7 +363,7 @@ class SumCostByUserQueryTest : DockerComposeTestBase() {
 
     @Test
     fun `tables match after insert then update`() {
-        setupTriggersAndSummaryTable()
+        setupTriggersAndLightningTable()
         insertTransaction(1, 10.00)
 
         transaction {
@@ -376,7 +376,7 @@ class SumCostByUserQueryTest : DockerComposeTestBase() {
 
     @Test
     fun `tables match after delete then insert`() {
-        setupTriggersAndSummaryTable()
+        setupTriggersAndLightningTable()
         insertTransaction(1, 10.00)
         insertTransaction(1, 20.00)
 
@@ -391,7 +391,7 @@ class SumCostByUserQueryTest : DockerComposeTestBase() {
 
     @Test
     fun `tables match after full cycle of insert, update, delete across users`() {
-        setupTriggersAndSummaryTable()
+        setupTriggersAndLightningTable()
 
         // Phase 1: inserts
         insertTransaction(1, 10.00)
@@ -425,7 +425,7 @@ class SumCostByUserQueryTest : DockerComposeTestBase() {
 
     @Test
     fun `tables match after rapid insert-update-delete sequence on same user`() {
-        setupTriggersAndSummaryTable()
+        setupTriggersAndLightningTable()
 
         insertTransaction(1, 10.00)
         assertTablesMatch("after insert")
@@ -450,7 +450,7 @@ class SumCostByUserQueryTest : DockerComposeTestBase() {
 
     @Test
     fun `tables match after bulk inserts then bulk deletes`() {
-        setupTriggersAndSummaryTable()
+        setupTriggersAndLightningTable()
 
         repeat(50) { insertTransaction(1, 1.00) }
         repeat(50) { insertTransaction(2, 2.00) }
@@ -467,7 +467,7 @@ class SumCostByUserQueryTest : DockerComposeTestBase() {
 
     @Test
     fun `tables match after bulk inserts then bulk updates`() {
-        setupTriggersAndSummaryTable()
+        setupTriggersAndLightningTable()
 
         repeat(30) { insertTransaction(1, 10.00) }
         repeat(30) { insertTransaction(2, 20.00) }
@@ -486,14 +486,14 @@ class SumCostByUserQueryTest : DockerComposeTestBase() {
 
     @Test
     fun `tables match after seeding many transactions`() {
-        setupTriggersAndSummaryTable()
+        setupTriggersAndLightningTable()
         TransactionsSeeder().seed(100)
         assertTablesMatch("after seeding 100 transactions")
     }
 
     @Test
     fun `tables match after seeding then deleting some`() {
-        setupTriggersAndSummaryTable()
+        setupTriggersAndLightningTable()
         TransactionsSeeder().seed(50)
         assertTablesMatch("after seeding 50")
 
@@ -505,7 +505,7 @@ class SumCostByUserQueryTest : DockerComposeTestBase() {
 
     @Test
     fun `tables match after seeding then updating some`() {
-        setupTriggersAndSummaryTable()
+        setupTriggersAndLightningTable()
         TransactionsSeeder().seed(50)
         assertTablesMatch("after seeding 50")
 
@@ -521,7 +521,7 @@ class SumCostByUserQueryTest : DockerComposeTestBase() {
 
     @Test
     fun `tables match when user has only zero-cost transactions`() {
-        setupTriggersAndSummaryTable()
+        setupTriggersAndLightningTable()
         insertTransaction(1, 0.00)
         insertTransaction(1, 0.00)
         insertTransaction(1, 0.00)
@@ -530,7 +530,7 @@ class SumCostByUserQueryTest : DockerComposeTestBase() {
 
     @Test
     fun `tables match with identical costs across all users`() {
-        setupTriggersAndSummaryTable()
+        setupTriggersAndLightningTable()
         insertTransaction(1, 10.00)
         insertTransaction(2, 10.00)
         insertTransaction(3, 10.00)
@@ -539,7 +539,7 @@ class SumCostByUserQueryTest : DockerComposeTestBase() {
 
     @Test
     fun `tables match after inserting and deleting same row repeatedly`() {
-        setupTriggersAndSummaryTable()
+        setupTriggersAndLightningTable()
 
         repeat(10) {
             insertTransaction(1, 5.00)
@@ -554,7 +554,7 @@ class SumCostByUserQueryTest : DockerComposeTestBase() {
 
     @Test
     fun `tables match with many users each having one transaction`() {
-        setupTriggersAndSummaryTable()
+        setupTriggersAndLightningTable()
         // Use users 1, 2, 3 (all that exist via FK)
         insertTransaction(1, 11.11)
         insertTransaction(2, 22.22)
@@ -564,7 +564,7 @@ class SumCostByUserQueryTest : DockerComposeTestBase() {
 
     @Test
     fun `tables match after update that does not change the value`() {
-        setupTriggersAndSummaryTable()
+        setupTriggersAndLightningTable()
         insertTransaction(1, 10.00)
 
         transaction {
@@ -579,7 +579,7 @@ class SumCostByUserQueryTest : DockerComposeTestBase() {
 
     @Test
     fun `tables match after updating both cost and user_id in one statement`() {
-        setupTriggersAndSummaryTable()
+        setupTriggersAndLightningTable()
         insertTransaction(1, 10.00)
         insertTransaction(2, 20.00)
 
@@ -593,7 +593,7 @@ class SumCostByUserQueryTest : DockerComposeTestBase() {
 
     @Test
     fun `tables match after updating both cost and user_id leaving source user empty`() {
-        setupTriggersAndSummaryTable()
+        setupTriggersAndLightningTable()
         insertTransaction(1, 10.00)
         insertTransaction(2, 20.00)
 
@@ -609,7 +609,7 @@ class SumCostByUserQueryTest : DockerComposeTestBase() {
 
     @Test
     fun `tables match after deleting rows spanning multiple users by cost filter`() {
-        setupTriggersAndSummaryTable()
+        setupTriggersAndLightningTable()
         insertTransaction(1, 1.00)
         insertTransaction(1, 50.00)
         insertTransaction(2, 2.00)
@@ -628,7 +628,7 @@ class SumCostByUserQueryTest : DockerComposeTestBase() {
 
     @Test
     fun `tables match after deleting rows that removes some users entirely`() {
-        setupTriggersAndSummaryTable()
+        setupTriggersAndLightningTable()
         insertTransaction(1, 1.00)
         insertTransaction(2, 2.00)
         insertTransaction(3, 100.00)
@@ -646,7 +646,7 @@ class SumCostByUserQueryTest : DockerComposeTestBase() {
 
     @Test
     fun `tables match after moving transaction to a user with no prior summary entry`() {
-        setupTriggersAndSummaryTable()
+        setupTriggersAndLightningTable()
         insertTransaction(1, 10.00)
         insertTransaction(1, 20.00)
 
@@ -661,7 +661,7 @@ class SumCostByUserQueryTest : DockerComposeTestBase() {
 
     @Test
     fun `tables match after moving all transactions to a user with no prior summary entry`() {
-        setupTriggersAndSummaryTable()
+        setupTriggersAndLightningTable()
         insertTransaction(1, 10.00)
         insertTransaction(1, 20.00)
 
@@ -678,7 +678,7 @@ class SumCostByUserQueryTest : DockerComposeTestBase() {
 
     @Test
     fun `tables match after multi-row update changing user_id across groups`() {
-        setupTriggersAndSummaryTable()
+        setupTriggersAndLightningTable()
         insertTransaction(1, 10.00)
         insertTransaction(1, 20.00)
         insertTransaction(2, 30.00)
@@ -694,7 +694,7 @@ class SumCostByUserQueryTest : DockerComposeTestBase() {
 
     @Test
     fun `tables match after multi-row update consolidating all users into one`() {
-        setupTriggersAndSummaryTable()
+        setupTriggersAndLightningTable()
         insertTransaction(1, 10.00)
         insertTransaction(2, 20.00)
         insertTransaction(3, 30.00)
@@ -712,7 +712,7 @@ class SumCostByUserQueryTest : DockerComposeTestBase() {
 
     @Test
     fun `tables match after deleting a zero-cost transaction`() {
-        setupTriggersAndSummaryTable()
+        setupTriggersAndLightningTable()
         insertTransaction(1, 0.00)
         insertTransaction(1, 25.00)
 
@@ -726,7 +726,7 @@ class SumCostByUserQueryTest : DockerComposeTestBase() {
 
     @Test
     fun `tables match after deleting only zero-cost transaction for a user`() {
-        setupTriggersAndSummaryTable()
+        setupTriggersAndLightningTable()
         insertTransaction(1, 0.00)
 
         connect().use { conn ->
@@ -739,7 +739,7 @@ class SumCostByUserQueryTest : DockerComposeTestBase() {
 
     @Test
     fun `tables match after deleting all zero-cost transactions across users`() {
-        setupTriggersAndSummaryTable()
+        setupTriggersAndLightningTable()
         insertTransaction(1, 0.00)
         insertTransaction(1, 10.00)
         insertTransaction(2, 0.00)

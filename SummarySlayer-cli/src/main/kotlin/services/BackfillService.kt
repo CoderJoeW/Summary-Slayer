@@ -45,7 +45,7 @@ class BackfillService(
             val conn = this.connection.connection as java.sql.Connection
 
             conn.createStatement().execute(
-                "LOCK TABLES `${context.baseTableName}` WRITE, `${context.summaryTableName}` WRITE"
+                "LOCK TABLES `${context.baseTableName}` WRITE, `${context.lightningTableName}` WRITE"
             )
 
             try {
@@ -73,7 +73,7 @@ class BackfillService(
                     }
                 }
 
-                conn.createStatement().execute("TRUNCATE TABLE `${context.summaryTableName}`")
+                conn.createStatement().execute("TRUNCATE TABLE `${context.lightningTableName}`")
 
                 if (minPk == null || maxPk == null) null
                 else BackfillSnapshot(dbNow, minPk, maxPk)
@@ -171,7 +171,7 @@ class BackfillService(
         }
 
         return """
-            INSERT INTO `${context.summaryTableName}` ($insertCols)
+            INSERT INTO `${context.lightningTableName}` ($insertCols)
             SELECT $selectCols
             FROM `${context.baseTableName}`
             WHERE $whereStr

@@ -24,7 +24,7 @@ data class ColumnSpec(
  */
 abstract class DockerComposeTestBase {
     companion object {
-        private const val JDBC_URL = "jdbc:mariadb://localhost:3307/summaryslayer"
+        private const val JDBC_URL = "jdbc:mariadb://localhost:3307/lightningtables"
         private const val USERNAME = "testuser"
         private const val PASSWORD = "testpassword"
         private const val DOCKER_COMPOSE_FILE = "docker-compose.test.yml"
@@ -136,11 +136,11 @@ abstract class DockerComposeTestBase {
         fun cleanDatabase() {
             connect().use { connection ->
                 connection.createStatement().use { statement ->
-                    // Drop any triggers and summary tables left by previous tests
-                    statement.execute("DROP TRIGGER IF EXISTS transactions_after_insert_summary")
-                    statement.execute("DROP TRIGGER IF EXISTS transactions_after_update_summary")
-                    statement.execute("DROP TRIGGER IF EXISTS transactions_after_delete_summary")
-                    statement.execute("DROP TABLE IF EXISTS transactions_user_id_summary")
+                    // Drop any triggers and lightning tables left by previous tests
+                    statement.execute("DROP TRIGGER IF EXISTS transactions_after_insert_lightning")
+                    statement.execute("DROP TRIGGER IF EXISTS transactions_after_update_lightning")
+                    statement.execute("DROP TRIGGER IF EXISTS transactions_after_delete_lightning")
+                    statement.execute("DROP TABLE IF EXISTS transactions_user_id_lightning")
 
                     statement.execute("DELETE FROM transactions")
                     statement.execute("DELETE FROM users")

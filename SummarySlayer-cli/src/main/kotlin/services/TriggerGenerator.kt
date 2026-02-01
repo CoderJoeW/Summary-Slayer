@@ -23,7 +23,7 @@ class TriggerGenerator {
         upsertStatement: String
     ): String {
         return """
-            CREATE TRIGGER `${tableName}_after_insert_summary`
+            CREATE TRIGGER `${tableName}_after_insert_lightning`
             AFTER INSERT ON `$baseTableName`
             FOR EACH ROW
             BEGIN
@@ -44,7 +44,7 @@ class TriggerGenerator {
         cleanupStatement: String
     ): String {
         return """
-            CREATE TRIGGER `${tableName}_after_update_summary`
+            CREATE TRIGGER `${tableName}_after_update_lightning`
             AFTER UPDATE ON `$baseTableName`
             FOR EACH ROW
             BEGIN
@@ -68,7 +68,7 @@ class TriggerGenerator {
         cleanupStatement: String
     ): String {
         return """
-            CREATE TRIGGER `${tableName}_after_delete_summary`
+            CREATE TRIGGER `${tableName}_after_delete_lightning`
             AFTER DELETE ON `$baseTableName`
             FOR EACH ROW
             BEGIN

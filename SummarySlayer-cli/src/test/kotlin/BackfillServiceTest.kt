@@ -4,7 +4,7 @@ import com.coderjoe.database.TransactionService
 import com.coderjoe.database.TransactionType
 import com.coderjoe.database.TransactionsTable
 import com.coderjoe.services.BackfillService
-import com.coderjoe.services.SummaryTriggerGeneratorSqlParser
+import com.coderjoe.services.LightningTableTriggerGeneratorSqlParser
 import org.jetbrains.exposed.v1.jdbc.insert
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -17,9 +17,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 class BackfillServiceTest : DockerComposeTestBase() {
-    private val parser = SummaryTriggerGeneratorSqlParser()
+    private val parser = LightningTableTriggerGeneratorSqlParser()
     private val query = queries["sumCostByUser"]!!
-    private val summaryTableName = "transactions_user_id_summary"
+    private val lightningTableName = "transactions_user_id_lightning"
 
     // ---------------------------------------------------------------------------
     // Helpers
@@ -27,9 +27,9 @@ class BackfillServiceTest : DockerComposeTestBase() {
 
     private fun generateResult() = parser.generate(query)
 
-    private fun setupSummaryTableAndBackfill(chunkSize: Int = 10, threadCount: Int = 2) {
+    private fun setupLightningTableAndBackfill(chunkSize: Int = 10, threadCount: Int = 2) {
         val result = generateResult()
-        transaction { exec(result.summaryTable) }
+        transaction { exec(result.lightningTable) }
         BackfillService(chunkSize = chunkSize, threadCount = threadCount)
             .backfill(result.backfillContext, result.triggers.values.toList())
     }
@@ -51,9 +51,9 @@ class BackfillServiceTest : DockerComposeTestBase() {
         }
     }
 
-    private fun querySummaryTable(): Map<Int, BigDecimal> {
+    private fun queryLightningTable(): Map<Int, BigDecimal> {
         connect().use { conn ->
-            val rs = conn.createStatement().executeQuery("SELECT * FROM $summaryTableName")
+            val rs = conn.createStatement().executeQuery("SELECT * FROM $lightningTableName")
             val results = mutableMapOf<Int, BigDecimal>()
             while (rs.next()) {
                 results[rs.getInt("user_id")] = rs.getBigDecimal("total_cost")
@@ -62,9 +62,9 @@ class BackfillServiceTest : DockerComposeTestBase() {
         }
     }
 
-    private fun summaryRowCount(): Int {
+    private fun lightningRowCount(): Int {
         connect().use { conn ->
-            val rs = conn.createStatement().executeQuery("SELECT COUNT(*) AS cnt FROM $summaryTableName")
+            val rs = conn.createStatement().executeQuery("SELECT COUNT(*) AS cnt FROM $lightningTableName")
             rs.next()
             return rs.getInt("cnt")
         }
@@ -119,10 +119,10 @@ class BackfillServiceTest : DockerComposeTestBase() {
         }
     }
 
-    private fun assertSummaryMatchesOriginal(context: String = "") {
+    private fun assertLightningMatchesOriginal(context: String = "") {
         val original = queryOriginalTable()
-        val summary = querySummaryTable()
-        assertEquals(original, summary, "Summary should match original query $context".trim())
+        val lightning = queryLightningTable()
+        assertEquals(original, lightning, "Lightning table should match original query $context".trim())
     }
 
     // ---------------------------------------------------------------------------
@@ -131,26 +131,26 @@ class BackfillServiceTest : DockerComposeTestBase() {
 
     @Test
     fun `backfill matches original query with seed data`() {
-        setupSummaryTableAndBackfill()
-        assertSummaryMatchesOriginal("after basic backfill")
+        setupLightningTableAndBackfill()
+        assertLightningMatchesOriginal("after basic backfill")
     }
 
     @Test
-    fun `backfill on empty table produces empty summary`() {
+    fun `backfill on empty table produces empty lightning table`() {
         executeSQL("DELETE FROM transactions")
-        setupSummaryTableAndBackfill()
-        assertEquals(0, summaryRowCount())
+        setupLightningTableAndBackfill()
+        assertEquals(0, lightningRowCount())
     }
 
     @Test
     fun `backfill single row table`() {
         executeSQL("DELETE FROM transactions")
         executeSQL("INSERT INTO transactions (user_id, type, service, cost) VALUES (1, 'DEBIT', 'CALL', 42.50)")
-        setupSummaryTableAndBackfill()
+        setupLightningTableAndBackfill()
 
-        val summary = querySummaryTable()
-        assertEquals(1, summary.size)
-        assertEquals(BigDecimal("42.50"), summary[1])
+        val lightning = queryLightningTable()
+        assertEquals(1, lightning.size)
+        assertEquals(BigDecimal("42.50"), lightning[1])
     }
 
     @Test
@@ -159,10 +159,10 @@ class BackfillServiceTest : DockerComposeTestBase() {
         repeat(20) {
             executeSQL("INSERT INTO transactions (user_id, type, service, cost) VALUES (1, 'DEBIT', 'CALL', 1.00)")
         }
-        setupSummaryTableAndBackfill(chunkSize = 5)
+        setupLightningTableAndBackfill(chunkSize = 5)
 
-        assertEquals(1, summaryRowCount())
-        assertEquals(BigDecimal("20.00"), querySummaryTable()[1])
+        assertEquals(1, lightningRowCount())
+        assertEquals(BigDecimal("20.00"), queryLightningTable()[1])
     }
 
     @Test
@@ -170,9 +170,9 @@ class BackfillServiceTest : DockerComposeTestBase() {
         executeSQL("DELETE FROM transactions")
         executeSQL("INSERT INTO transactions (user_id, type, service, cost) VALUES (1, 'DEBIT', 'CALL', 0.00)")
         executeSQL("INSERT INTO transactions (user_id, type, service, cost) VALUES (1, 'DEBIT', 'SMS', 5.00)")
-        setupSummaryTableAndBackfill()
+        setupLightningTableAndBackfill()
 
-        assertEquals(BigDecimal("5.00"), querySummaryTable()[1])
+        assertEquals(BigDecimal("5.00"), queryLightningTable()[1])
     }
 
     @Test
@@ -181,16 +181,16 @@ class BackfillServiceTest : DockerComposeTestBase() {
         executeSQL("INSERT INTO transactions (user_id, type, service, cost) VALUES (1, 'DEBIT', 'CALL', 0.01)")
         executeSQL("INSERT INTO transactions (user_id, type, service, cost) VALUES (1, 'DEBIT', 'SMS', 0.02)")
         executeSQL("INSERT INTO transactions (user_id, type, service, cost) VALUES (1, 'DEBIT', 'DATA', 0.03)")
-        setupSummaryTableAndBackfill()
+        setupLightningTableAndBackfill()
 
-        assertEquals(BigDecimal("0.06"), querySummaryTable()[1])
+        assertEquals(BigDecimal("0.06"), queryLightningTable()[1])
     }
 
     @Test
     fun `backfill correct number of groups`() {
-        setupSummaryTableAndBackfill()
+        setupLightningTableAndBackfill()
         val originalGroups = queryOriginalTable().size
-        val summaryGroups = summaryRowCount()
+        val summaryGroups = lightningRowCount()
         assertEquals(originalGroups, summaryGroups)
         assertTrue(summaryGroups > 0)
     }
@@ -201,33 +201,33 @@ class BackfillServiceTest : DockerComposeTestBase() {
 
     @Test
     fun `chunk size of 1 processes every row individually`() {
-        setupSummaryTableAndBackfill(chunkSize = 1)
-        assertSummaryMatchesOriginal("chunk size 1")
+        setupLightningTableAndBackfill(chunkSize = 1)
+        assertLightningMatchesOriginal("chunk size 1")
     }
 
     @Test
     fun `chunk size of 2`() {
-        setupSummaryTableAndBackfill(chunkSize = 2)
-        assertSummaryMatchesOriginal("chunk size 2")
+        setupLightningTableAndBackfill(chunkSize = 2)
+        assertLightningMatchesOriginal("chunk size 2")
     }
 
     @Test
     fun `chunk size equals row count`() {
         val rowCount = baseTableRowCount()
-        setupSummaryTableAndBackfill(chunkSize = rowCount)
-        assertSummaryMatchesOriginal("chunk size = row count")
+        setupLightningTableAndBackfill(chunkSize = rowCount)
+        assertLightningMatchesOriginal("chunk size = row count")
     }
 
     @Test
     fun `chunk size exceeds row count`() {
-        setupSummaryTableAndBackfill(chunkSize = 100_000)
-        assertSummaryMatchesOriginal("chunk size >> row count")
+        setupLightningTableAndBackfill(chunkSize = 100_000)
+        assertLightningMatchesOriginal("chunk size >> row count")
     }
 
     @Test
     fun `chunk size of 3 with 10 rows creates uneven chunks`() {
-        setupSummaryTableAndBackfill(chunkSize = 3)
-        assertSummaryMatchesOriginal("uneven chunks")
+        setupLightningTableAndBackfill(chunkSize = 3)
+        assertLightningMatchesOriginal("uneven chunks")
     }
 
     // ---------------------------------------------------------------------------
@@ -237,8 +237,8 @@ class BackfillServiceTest : DockerComposeTestBase() {
     @Test
     fun `backfill handles PK gaps from deleted rows`() {
         executeSQL("DELETE FROM transactions WHERE id IN (2, 4, 6, 8)")
-        setupSummaryTableAndBackfill(chunkSize = 2)
-        assertSummaryMatchesOriginal("after PK gaps")
+        setupLightningTableAndBackfill(chunkSize = 2)
+        assertLightningMatchesOriginal("after PK gaps")
     }
 
     @Test
@@ -247,8 +247,8 @@ class BackfillServiceTest : DockerComposeTestBase() {
         executeSQL("ALTER TABLE transactions AUTO_INCREMENT = 1000")
         executeSQL("INSERT INTO transactions (user_id, type, service, cost) VALUES (1, 'DEBIT', 'CALL', 10.00)")
         executeSQL("INSERT INTO transactions (user_id, type, service, cost) VALUES (2, 'DEBIT', 'SMS', 20.00)")
-        setupSummaryTableAndBackfill(chunkSize = 5)
-        assertSummaryMatchesOriginal("large PK gap at start")
+        setupLightningTableAndBackfill(chunkSize = 5)
+        assertLightningMatchesOriginal("large PK gap at start")
     }
 
     @Test
@@ -261,8 +261,8 @@ class BackfillServiceTest : DockerComposeTestBase() {
         executeSQL("ALTER TABLE transactions AUTO_INCREMENT = 1000")
         executeSQL("INSERT INTO transactions (user_id, type, service, cost) VALUES (2, 'DEBIT', 'DATA', 25.00)")
 
-        setupSummaryTableAndBackfill(chunkSize = 10)
-        assertSummaryMatchesOriginal("sparse PKs")
+        setupLightningTableAndBackfill(chunkSize = 10)
+        assertLightningMatchesOriginal("sparse PKs")
     }
 
     // ---------------------------------------------------------------------------
@@ -271,34 +271,34 @@ class BackfillServiceTest : DockerComposeTestBase() {
 
     @Test
     fun `backfill is idempotent - running twice produces same result`() {
-        setupSummaryTableAndBackfill()
-        val firstRun = querySummaryTable()
+        setupLightningTableAndBackfill()
+        val firstRun = queryLightningTable()
 
         reBackfill()
-        val secondRun = querySummaryTable()
+        val secondRun = queryLightningTable()
 
         assertEquals(firstRun, secondRun, "Two consecutive backfills should produce identical results")
-        assertSummaryMatchesOriginal("after double backfill")
+        assertLightningMatchesOriginal("after double backfill")
     }
 
     @Test
     fun `backfill three times in a row`() {
-        setupSummaryTableAndBackfill()
+        setupLightningTableAndBackfill()
         reBackfill()
         reBackfill()
-        assertSummaryMatchesOriginal("after triple backfill")
+        assertLightningMatchesOriginal("after triple backfill")
     }
 
     @Test
     fun `re-backfill after trigger inserts resets to correct totals`() {
-        setupSummaryTableAndBackfill()
+        setupLightningTableAndBackfill()
 
         insertTransaction(1, 100.00)
         insertTransaction(2, 200.00)
-        assertSummaryMatchesOriginal("after trigger inserts")
+        assertLightningMatchesOriginal("after trigger inserts")
 
         reBackfill()
-        assertSummaryMatchesOriginal("after re-backfill")
+        assertLightningMatchesOriginal("after re-backfill")
     }
 
     // ---------------------------------------------------------------------------
@@ -307,93 +307,93 @@ class BackfillServiceTest : DockerComposeTestBase() {
 
     @Test
     fun `triggers work after backfill - insert`() {
-        setupSummaryTableAndBackfill()
+        setupLightningTableAndBackfill()
 
         insertTransaction(1, 100.00)
         insertTransaction(2, 200.00)
         insertTransaction(3, 300.00)
-        assertSummaryMatchesOriginal("after post-backfill inserts")
+        assertLightningMatchesOriginal("after post-backfill inserts")
     }
 
     @Test
     fun `triggers work after backfill - insert for new user`() {
         executeSQL("INSERT INTO users (first_name, last_name) VALUES ('New', 'User')")
-        setupSummaryTableAndBackfill()
+        setupLightningTableAndBackfill()
 
         insertTransaction(4, 50.00)
-        assertSummaryMatchesOriginal("after insert for new user")
+        assertLightningMatchesOriginal("after insert for new user")
     }
 
     @Test
     fun `triggers work after backfill - update single row`() {
-        setupSummaryTableAndBackfill()
+        setupLightningTableAndBackfill()
 
         transaction { exec("UPDATE transactions SET cost = 999.99 WHERE id = 1") }
-        assertSummaryMatchesOriginal("after update")
+        assertLightningMatchesOriginal("after update")
     }
 
     @Test
     fun `triggers work after backfill - update all rows for one user`() {
-        setupSummaryTableAndBackfill()
+        setupLightningTableAndBackfill()
 
         transaction { exec("UPDATE transactions SET cost = 0.01 WHERE user_id = 1") }
-        assertSummaryMatchesOriginal("after bulk update for user 1")
+        assertLightningMatchesOriginal("after bulk update for user 1")
     }
 
     @Test
     fun `triggers work after backfill - delete single row`() {
-        setupSummaryTableAndBackfill()
+        setupLightningTableAndBackfill()
 
         transaction { exec("DELETE FROM transactions WHERE id = 1") }
-        assertSummaryMatchesOriginal("after delete")
+        assertLightningMatchesOriginal("after delete")
     }
 
     @Test
     fun `triggers work after backfill - delete all rows for one user`() {
-        setupSummaryTableAndBackfill()
+        setupLightningTableAndBackfill()
 
         transaction { exec("DELETE FROM transactions WHERE user_id = 3") }
-        assertSummaryMatchesOriginal("after bulk delete of user 3")
+        assertLightningMatchesOriginal("after bulk delete of user 3")
     }
 
     @Test
     fun `triggers work after backfill - mixed insert update delete`() {
-        setupSummaryTableAndBackfill()
+        setupLightningTableAndBackfill()
 
         insertTransaction(1, 50.00)
         transaction { exec("UPDATE transactions SET cost = 0.01 WHERE id = 2") }
         transaction { exec("DELETE FROM transactions WHERE id = 3") }
         insertTransaction(2, 75.00)
-        assertSummaryMatchesOriginal("after mixed operations")
+        assertLightningMatchesOriginal("after mixed operations")
     }
 
     @Test
     fun `triggers work after backfill - rapid sequential inserts`() {
-        setupSummaryTableAndBackfill()
+        setupLightningTableAndBackfill()
 
         for (i in 1..50) {
             insertTransaction((i % 3) + 1, 1.00)
         }
-        assertSummaryMatchesOriginal("after 50 sequential inserts")
+        assertLightningMatchesOriginal("after 50 sequential inserts")
     }
 
     @Test
     fun `triggers work after backfill - update cost to zero`() {
-        setupSummaryTableAndBackfill()
+        setupLightningTableAndBackfill()
 
         transaction { exec("UPDATE transactions SET cost = 0.00 WHERE id = 1") }
-        assertSummaryMatchesOriginal("after update to zero")
+        assertLightningMatchesOriginal("after update to zero")
     }
 
     @Test
     fun `triggers work after backfill - delete then re-insert same user`() {
-        setupSummaryTableAndBackfill()
+        setupLightningTableAndBackfill()
 
         transaction { exec("DELETE FROM transactions WHERE user_id = 1") }
-        assertSummaryMatchesOriginal("after deleting user 1")
+        assertLightningMatchesOriginal("after deleting user 1")
 
         insertTransaction(1, 42.00)
-        assertSummaryMatchesOriginal("after re-inserting for user 1")
+        assertLightningMatchesOriginal("after re-inserting for user 1")
     }
 
     // ---------------------------------------------------------------------------
@@ -408,8 +408,8 @@ class BackfillServiceTest : DockerComposeTestBase() {
         }
         bulkInsertJdbc(rows)
 
-        setupSummaryTableAndBackfill(chunkSize = 7, threadCount = 4)
-        assertSummaryMatchesOriginal("500 rows, chunk=7")
+        setupLightningTableAndBackfill(chunkSize = 7, threadCount = 4)
+        assertLightningMatchesOriginal("500 rows, chunk=7")
     }
 
     @Test
@@ -420,8 +420,8 @@ class BackfillServiceTest : DockerComposeTestBase() {
         }
         bulkInsertJdbc(rows)
 
-        setupSummaryTableAndBackfill(chunkSize = 50, threadCount = 4)
-        assertSummaryMatchesOriginal("1000 rows, 3 users")
+        setupLightningTableAndBackfill(chunkSize = 50, threadCount = 4)
+        assertLightningMatchesOriginal("1000 rows, 3 users")
     }
 
     @Test
@@ -432,9 +432,9 @@ class BackfillServiceTest : DockerComposeTestBase() {
         }
         bulkInsertJdbc(rows)
 
-        setupSummaryTableAndBackfill(chunkSize = 25, threadCount = 4)
-        assertSummaryMatchesOriginal("1000 rows, 50 users")
-        assertEquals(50, summaryRowCount(), "Should have 50 groups")
+        setupLightningTableAndBackfill(chunkSize = 25, threadCount = 4)
+        assertLightningMatchesOriginal("1000 rows, 50 users")
+        assertEquals(50, lightningRowCount(), "Should have 50 groups")
     }
 
     @Test
@@ -445,8 +445,8 @@ class BackfillServiceTest : DockerComposeTestBase() {
         }
         bulkInsertJdbc(rows)
 
-        setupSummaryTableAndBackfill(chunkSize = 1, threadCount = 1)
-        assertSummaryMatchesOriginal("2000 rows, chunk=1, threads=1")
+        setupLightningTableAndBackfill(chunkSize = 1, threadCount = 1)
+        assertLightningMatchesOriginal("2000 rows, chunk=1, threads=1")
     }
 
     @Test
@@ -457,8 +457,8 @@ class BackfillServiceTest : DockerComposeTestBase() {
         }
         bulkInsertJdbc(rows)
 
-        setupSummaryTableAndBackfill(chunkSize = 10, threadCount = 8)
-        assertSummaryMatchesOriginal("500 rows, chunk=10, threads=8")
+        setupLightningTableAndBackfill(chunkSize = 10, threadCount = 8)
+        assertLightningMatchesOriginal("500 rows, chunk=10, threads=8")
     }
 
     // ---------------------------------------------------------------------------
@@ -485,7 +485,7 @@ class BackfillServiceTest : DockerComposeTestBase() {
         bulkInsertJdbc(seedRows)
 
         val result = generateResult()
-        transaction { exec(result.summaryTable) }
+        transaction { exec(result.lightningTable) }
 
         val insertsCompleted = AtomicInteger(0)
         val backfillDone = AtomicBoolean(false)
@@ -521,7 +521,7 @@ class BackfillServiceTest : DockerComposeTestBase() {
         println("Concurrent inserts completed during backfill: ${insertsCompleted.get()}")
         assertTrue(insertsCompleted.get() > 0, "Should have inserted rows during backfill")
 
-        assertSummaryMatchesOriginal("after concurrent inserts during backfill")
+        assertLightningMatchesOriginal("after concurrent inserts during backfill")
     }
 
     @Test
@@ -533,7 +533,7 @@ class BackfillServiceTest : DockerComposeTestBase() {
         bulkInsertJdbc(seedRows)
 
         val result = generateResult()
-        transaction { exec(result.summaryTable) }
+        transaction { exec(result.lightningTable) }
 
         val writerCount = 4
         val backfillDone = AtomicBoolean(false)
@@ -572,7 +572,7 @@ class BackfillServiceTest : DockerComposeTestBase() {
         println("Total concurrent inserts from $writerCount writers: ${totalInserts.get()}")
         assertTrue(totalInserts.get() > 0, "Writers should have inserted rows")
 
-        assertSummaryMatchesOriginal("after multi-writer concurrent inserts")
+        assertLightningMatchesOriginal("after multi-writer concurrent inserts")
     }
 
     @Test
@@ -584,7 +584,7 @@ class BackfillServiceTest : DockerComposeTestBase() {
         bulkInsertJdbc(seedRows)
 
         val result = generateResult()
-        transaction { exec(result.summaryTable) }
+        transaction { exec(result.lightningTable) }
 
         val burstReady = CountDownLatch(1)
         val burstInserts = AtomicInteger(0)
@@ -626,7 +626,7 @@ class BackfillServiceTest : DockerComposeTestBase() {
         burstWriters.forEach { it.join(5000) }
 
         println("Burst inserts completed: ${burstInserts.get()}")
-        assertSummaryMatchesOriginal("after burst inserts during backfill")
+        assertLightningMatchesOriginal("after burst inserts during backfill")
     }
 
     @Test
@@ -636,7 +636,7 @@ class BackfillServiceTest : DockerComposeTestBase() {
         executeSQL("INSERT INTO users (first_name, last_name) VALUES ('Extra', 'Two')")
 
         val result = generateResult()
-        transaction { exec(result.summaryTable) }
+        transaction { exec(result.lightningTable) }
 
         val backfillDone = AtomicBoolean(false)
         val insertsCompleted = AtomicInteger(0)
@@ -671,7 +671,7 @@ class BackfillServiceTest : DockerComposeTestBase() {
 
         println("Inserts for new users during backfill: ${insertsCompleted.get()}")
         assertTrue(insertsCompleted.get() > 0)
-        assertSummaryMatchesOriginal("after concurrent inserts for new users")
+        assertLightningMatchesOriginal("after concurrent inserts for new users")
     }
 
     // ---------------------------------------------------------------------------
@@ -687,7 +687,7 @@ class BackfillServiceTest : DockerComposeTestBase() {
         bulkInsertJdbc(seedRows)
 
         val result = generateResult()
-        transaction { exec(result.summaryTable) }
+        transaction { exec(result.lightningTable) }
 
         val backfillDone = AtomicBoolean(false)
         val totalInserted = AtomicInteger(0)
@@ -725,7 +725,7 @@ class BackfillServiceTest : DockerComposeTestBase() {
         println("Stress test: ${totalInserted.get()} rows inserted during backfill")
         assertTrue(totalInserted.get() > 0, "Writers should have inserted rows")
 
-        assertSummaryMatchesOriginal("after high-throughput stress test")
+        assertLightningMatchesOriginal("after high-throughput stress test")
     }
 
     @Test
@@ -737,7 +737,7 @@ class BackfillServiceTest : DockerComposeTestBase() {
         bulkInsertJdbc(seedRows)
 
         val result = generateResult()
-        transaction { exec(result.summaryTable) }
+        transaction { exec(result.lightningTable) }
 
         val backfillDone = AtomicBoolean(false)
         val totalInserted = AtomicInteger(0)
@@ -774,8 +774,8 @@ class BackfillServiceTest : DockerComposeTestBase() {
         writers.forEach { it.join(5000) }
 
         println("20-user stress: ${totalInserted.get()} rows inserted during backfill")
-        assertSummaryMatchesOriginal("after 20-user stress test")
-        assertEquals(20, summaryRowCount(), "Should have 20 groups")
+        assertLightningMatchesOriginal("after 20-user stress test")
+        assertEquals(20, lightningRowCount(), "Should have 20 groups")
     }
 
     @Test
@@ -797,7 +797,7 @@ class BackfillServiceTest : DockerComposeTestBase() {
         }
 
         val result = generateResult()
-        transaction { exec(result.summaryTable) }
+        transaction { exec(result.lightningTable) }
 
         val backfillDone = AtomicBoolean(false)
         val totalInserted = AtomicInteger(0)
@@ -829,7 +829,7 @@ class BackfillServiceTest : DockerComposeTestBase() {
         writer.join(5000)
 
         println("Sparse range stress: ${totalInserted.get()} rows inserted during backfill")
-        assertSummaryMatchesOriginal("after sparse range stress test")
+        assertLightningMatchesOriginal("after sparse range stress test")
     }
 
     // ---------------------------------------------------------------------------
@@ -844,14 +844,14 @@ class BackfillServiceTest : DockerComposeTestBase() {
         }
         bulkInsertJdbc(rows)
 
-        setupSummaryTableAndBackfill(chunkSize = 10, threadCount = 1)
-        assertSummaryMatchesOriginal("single backfill thread")
+        setupLightningTableAndBackfill(chunkSize = 10, threadCount = 1)
+        assertLightningMatchesOriginal("single backfill thread")
     }
 
     @Test
     fun `many backfill threads on small dataset`() {
-        setupSummaryTableAndBackfill(chunkSize = 1, threadCount = 8)
-        assertSummaryMatchesOriginal("8 threads on 10 rows")
+        setupLightningTableAndBackfill(chunkSize = 1, threadCount = 8)
+        assertLightningMatchesOriginal("8 threads on 10 rows")
     }
 
     @Test
@@ -862,27 +862,27 @@ class BackfillServiceTest : DockerComposeTestBase() {
         }
         bulkInsertJdbc(rows)
 
-        setupSummaryTableAndBackfill(chunkSize = 7, threadCount = 4)
-        val firstResult = querySummaryTable()
+        setupLightningTableAndBackfill(chunkSize = 7, threadCount = 4)
+        val firstResult = queryLightningTable()
 
         for ((chunk, threads) in listOf(3 to 2, 11 to 3, 50 to 1, 1 to 4)) {
             reBackfill(chunkSize = chunk, threadCount = threads)
-            assertEquals(firstResult, querySummaryTable(),
+            assertEquals(firstResult, queryLightningTable(),
                 "chunk=$chunk threads=$threads should match first run")
         }
     }
 
     @Test
     fun `concurrent chunk threads do not double-count shared group keys`() {
-        // All rows for a single user — every chunk touches the same summary row.
+        // All rows for a single user — every chunk touches the same lightning row.
         // Verifies ON DUPLICATE KEY UPDATE += is safe across concurrent chunk threads.
         executeSQL("DELETE FROM transactions")
         val rows = (1..200).map { Triple(1, "CALL", 1.00) }
         bulkInsertJdbc(rows)
 
-        setupSummaryTableAndBackfill(chunkSize = 5, threadCount = 8)
-        assertEquals(1, summaryRowCount())
-        assertEquals(BigDecimal("200.00"), querySummaryTable()[1])
+        setupLightningTableAndBackfill(chunkSize = 5, threadCount = 8)
+        assertEquals(1, lightningRowCount())
+        assertEquals(BigDecimal("200.00"), queryLightningTable()[1])
     }
 
     // ---------------------------------------------------------------------------
@@ -895,9 +895,9 @@ class BackfillServiceTest : DockerComposeTestBase() {
         // DECIMAL(10,2) max is 99_999_999.99. Stay within range.
         executeSQL("INSERT INTO transactions (user_id, type, service, cost) VALUES (1, 'DEBIT', 'CALL', 50000000.00)")
         executeSQL("INSERT INTO transactions (user_id, type, service, cost) VALUES (1, 'DEBIT', 'SMS', 49999999.99)")
-        setupSummaryTableAndBackfill()
+        setupLightningTableAndBackfill()
 
-        assertEquals(BigDecimal("99999999.99"), querySummaryTable()[1])
+        assertEquals(BigDecimal("99999999.99"), queryLightningTable()[1])
     }
 
     @Test
@@ -906,9 +906,9 @@ class BackfillServiceTest : DockerComposeTestBase() {
         val rows = (1..200).map { Triple(1, "CALL", 0.01) }
         bulkInsertJdbc(rows)
 
-        setupSummaryTableAndBackfill(chunkSize = 13)
-        assertEquals(1, summaryRowCount())
-        assertEquals(BigDecimal("2.00"), querySummaryTable()[1])
+        setupLightningTableAndBackfill(chunkSize = 13)
+        assertEquals(1, lightningRowCount())
+        assertEquals(BigDecimal("2.00"), queryLightningTable()[1])
     }
 
     @Test
@@ -917,7 +917,7 @@ class BackfillServiceTest : DockerComposeTestBase() {
         try {
             val context = com.coderjoe.services.BackfillContext(
                 baseTableName = "no_ts_table",
-                summaryTableName = "no_ts_summary",
+                lightningTableName = "no_ts_summary",
                 groupByColumns = emptyList(),
                 aggregates = listOf(com.coderjoe.services.AggregateInfo("COUNT", "*", "row_count")),
                 whereClause = null
@@ -938,8 +938,8 @@ class BackfillServiceTest : DockerComposeTestBase() {
                 "INSERT INTO transactions (user_id, type, service, cost) VALUES (${(i % 3) + 1}, 'DEBIT', 'CALL', 7.77)"
             )
         }
-        setupSummaryTableAndBackfill(chunkSize = 4)
-        assertSummaryMatchesOriginal("all identical costs")
+        setupLightningTableAndBackfill(chunkSize = 4)
+        assertLightningMatchesOriginal("all identical costs")
     }
 
     @Test
@@ -951,8 +951,8 @@ class BackfillServiceTest : DockerComposeTestBase() {
                 "INSERT INTO transactions (user_id, type, service, cost) VALUES (${(i % 3) + 1}, 'DEBIT', 'CALL', $cost)"
             )
         }
-        setupSummaryTableAndBackfill(chunkSize = 9)
-        assertSummaryMatchesOriginal("alternating high/low costs")
+        setupLightningTableAndBackfill(chunkSize = 9)
+        assertLightningMatchesOriginal("alternating high/low costs")
     }
 
     // ---------------------------------------------------------------------------
@@ -964,11 +964,11 @@ class BackfillServiceTest : DockerComposeTestBase() {
         val originalBefore = queryOriginalTable()
         assertTrue(originalBefore.isNotEmpty(), "Seed data should exist")
 
-        setupSummaryTableAndBackfill()
-        assertSummaryMatchesOriginal("pre-existing data captured")
+        setupLightningTableAndBackfill()
+        assertLightningMatchesOriginal("pre-existing data captured")
 
         insertTransaction(1, 77.00)
-        assertSummaryMatchesOriginal("pre-existing + trigger data")
+        assertLightningMatchesOriginal("pre-existing + trigger data")
     }
 
     @Test
@@ -979,18 +979,18 @@ class BackfillServiceTest : DockerComposeTestBase() {
         }
         bulkInsertJdbc(rows)
 
-        setupSummaryTableAndBackfill(chunkSize = 25, threadCount = 4)
-        assertSummaryMatchesOriginal("1000 rows captured")
+        setupLightningTableAndBackfill(chunkSize = 25, threadCount = 4)
+        assertLightningMatchesOriginal("1000 rows captured")
 
         for (i in 1..100) {
             insertTransaction((i % 3) + 1, 0.50)
         }
-        assertSummaryMatchesOriginal("after 100 trigger inserts")
+        assertLightningMatchesOriginal("after 100 trigger inserts")
     }
 
     @Test
     fun `backfill then high volume trigger inserts match original`() {
-        setupSummaryTableAndBackfill()
+        setupLightningTableAndBackfill()
 
         // Hammer triggers with rapid inserts after backfill
         val rows = (1..500).map { i ->
@@ -998,7 +998,7 @@ class BackfillServiceTest : DockerComposeTestBase() {
         }
         bulkInsertJdbc(rows)
 
-        assertSummaryMatchesOriginal("after 500 post-backfill bulk inserts")
+        assertLightningMatchesOriginal("after 500 post-backfill bulk inserts")
     }
 
     // ---------------------------------------------------------------------------
@@ -1014,7 +1014,7 @@ class BackfillServiceTest : DockerComposeTestBase() {
         bulkInsertJdbc(seedRows)
 
         val result = generateResult()
-        transaction { exec(result.summaryTable) }
+        transaction { exec(result.lightningTable) }
 
         val writerStarted = CountDownLatch(1)
         val writerCompleted = AtomicBoolean(false)
@@ -1046,6 +1046,6 @@ class BackfillServiceTest : DockerComposeTestBase() {
         writer.join(5000)
         assertTrue(writerCompleted.get(), "Writer should have completed after lock released")
 
-        assertSummaryMatchesOriginal("after blocked writer completes")
+        assertLightningMatchesOriginal("after blocked writer completes")
     }
 }
