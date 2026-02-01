@@ -3,13 +3,13 @@ version: '3.8'
 services:
   mariadb:
     image: mariadb:latest
-    container_name: summaryslayer-mariadb
+    container_name: lightningtables-mariadb
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: rootpassword
-      MYSQL_DATABASE: summaryslayer
-      MYSQL_USER: slayer
-      MYSQL_PASSWORD: slayerpassword
+      MYSQL_DATABASE: lightningtables
+      MYSQL_USER: lightning
+      MYSQL_PASSWORD: lightningpassword
     ports:
       - "3306:3306"
     volumes:

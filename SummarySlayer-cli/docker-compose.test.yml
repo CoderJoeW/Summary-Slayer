@@ -3,11 +3,11 @@ version: '3.8'
 services:
   mariadb-test:
     image: mariadb:10.11
-    container_name: summaryslayer-mariadb-test
+    container_name: lightningtables-mariadb-test
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: testroot
-      MYSQL_DATABASE: summaryslayer
+      MYSQL_DATABASE: lightningtables
       MYSQL_USER: testuser
       MYSQL_PASSWORD: testpassword
     ports:
