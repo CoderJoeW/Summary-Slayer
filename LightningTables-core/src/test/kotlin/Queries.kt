@@ -8,4 +8,9 @@ val queries =
             FROM transactions
             GROUP BY user_id
             """.trimIndent(),
+        "totalRecords" to
+            """
+            SELECT COUNT(*) as record_count
+            FROM transactions
+            """.trimIndent(),
     )
